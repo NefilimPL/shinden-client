@@ -1,5 +1,4 @@
 <script lang="ts">
-    import {page} from "$app/state";
     import {invoke} from "@tauri-apps/api/core";
     import {onMount} from "svelte";
     import type {Anime} from "$lib/types";
@@ -13,7 +12,7 @@
 
     onMount(async () => {
         try {
-            log(LogLevel.INFO, `Searching anime: ${page.params.name}`);
+            log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
             result = await invoke("search", {
                 query: params.animeName
@@ -27,15 +26,15 @@
                     return b_rating - a_rating;
                 });
                 globalStates.loadingState = LoadingState.OK;
-                log(LogLevel.SUCCESS, `Searching anime: ${page.params.name} done`);
+                log(LogLevel.SUCCESS, `Searching anime: ${params.animeName} done`);
             } else {
 
-                log(LogLevel.WARNING, `Searching anime: ${page.params.name} found 0 results`);
+                log(LogLevel.WARNING, `Searching anime: ${params.animeName} found 0 results`);
                 globalStates.loadingState = LoadingState.WARNING;
             }
         } catch (e) {
             globalStates.loadingState = LoadingState.ERROR;
-            log(LogLevel.ERROR, `Error searching anime: ${page.params.name}`);
+            log(LogLevel.ERROR, `Error searching anime: ${params.animeName}`);
         }
     })
 
