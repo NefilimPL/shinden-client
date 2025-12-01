@@ -40,6 +40,34 @@ Zamiast przeglądarki, dostajesz lekki, szybki i skoncentrowany na treści inter
 
 ---
 
+## 🧪 Pierwsze uruchomienie w trybie testowym (dev)
+
+1. **Zainstaluj zależności frontendu**: `npm install` (w katalogu repozytorium).
+2. **Upewnij się, że masz toolchain Rust + Tauri**:
+   - Rust (stable) z `cargo` oraz narzędzia systemowe (na Windows: MSVC build tools + `winget install --id=Microsoft.VCRedist.2015+.x64` jeśli brak redystrybucji).
+   - Tauri CLI jest w devDependencies (`@tauri-apps/cli`), więc nie musisz go instalować globalnie.
+3. **Uruchom aplikację w trybie developerskim**: `npm run tauri dev`.
+   - Komenda automatycznie podniesie `npm run dev` (SvelteKit na `http://localhost:1420`) zgodnie z `tauri.conf.json`, a następnie otworzy okno desktopowe Tauri z hot-reloadem.
+4. (Opcjonalnie) **Uruchom sam frontend w przeglądarce**: `npm run dev`.
+
+> Jeśli pierwsze uruchomienie trwa dłużej, to normalne — Tauri buduje binarkę Rust i cache’uje zależności.
+
+---
+
+## 📦 Budowa instalatora/EXE (Windows)
+
+1. **Przygotuj środowisko**:
+   - Zainstaluj Rust (stable) i MSVC build tools.
+   - Zainstaluj zależności frontendu: `npm install`.
+2. **Zbuduj aplikację**: `npm run tauri build`.
+   - Tauri najpierw wykona `npm run build` i użyje artefaktów z katalogu `build` (patrz `frontendDist` w `tauri.conf.json`).
+   - Końcowe pliki znajdziesz w `src-tauri/target/release/bundle/` (np. `.msi`, `.exe`, ewentualnie `.nsis`).
+3. **Dystrybucja**: do użytkowników przekazujesz wygenerowany instalator `.exe` (lub `.msi`).
+
+> Podczas budowania weryfikuj logi cargo; jeśli brakuje bibliotek systemowych (np. Visual C++ Redistributable), doinstaluj je i powtórz `npm run tauri build`.
+
+---
+
 # LICENCJA
 
 MIT © 2025 Błażej Drozd
