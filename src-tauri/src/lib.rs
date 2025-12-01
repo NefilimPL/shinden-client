@@ -1,5 +1,84 @@
+use scraper::{Html, Selector};
 use shinden_pl_api::client::ShindenAPI;
 use shinden_pl_api::models::{Anime, Episode, Player};
+
+fn parse_watching_list(html: &str) -> Vec<Anime> {
+    let doc = Html::parse_document(html);
+    let div_row = Selector::parse(".div-row").unwrap();
+    let h3 = Selector::parse("h3").unwrap();
+    let a = Selector::parse("a").unwrap();
+    let cover = Selector::parse(".cover-col a").unwrap();
+    let kind = Selector::parse(".title-kind-col").unwrap();
+    let episodes = Selector::parse(".episodes-col").unwrap();
+    let rating = Selector::parse(".rate-top").unwrap();
+
+    let mut result = Vec::new();
+
+    for div in doc.select(&div_row) {
+        let name_elem = div.select(&h3).next().and_then(|h| h.select(&a).next());
+
+        let name = name_elem
+            .map(|el| el.text().collect::<String>())
+            .unwrap_or_default();
+
+        let url = name_elem
+            .and_then(|el| el.value().attr("href"))
+            .unwrap_or("")
+            .to_string();
+
+        let img_href = div
+            .select(&cover)
+            .next()
+            .and_then(|el| el.value().attr("href"))
+            .unwrap_or("/res/other/placeholders/title/100x100.jpg");
+
+        let full_url = format!("https://shinden.pl{}", url);
+        let img_url = format!("https://shinden.pl{}", img_href);
+        let anime_type = div
+            .select(&kind)
+            .next()
+            .map(|k| k.text().collect::<String>())
+            .unwrap_or_default();
+
+        let ep_count = div
+            .select(&episodes)
+            .next()
+            .map(|e| e.text().collect::<String>())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        let rate = div
+            .select(&rating)
+            .next()
+            .map(|r| r.text().collect::<String>())
+            .unwrap_or_default();
+
+        if !name.is_empty() {
+            result.push(Anime {
+                name,
+                url: full_url,
+                image_url: img_url,
+                anime_type,
+                rating: rate,
+                episodes: ep_count,
+                description: String::new(),
+            });
+        }
+    }
+
+    result
+}
+
+fn has_available_episodes(episodes: &str) -> bool {
+    episodes
+        .split('/')
+        .next()
+        .and_then(|value| value.trim().split_whitespace().next())
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(|count| count > 0)
+        .unwrap_or(false)
+}
 struct Api(ShindenAPI);
 
 #[tauri::command]
@@ -22,6 +101,23 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Anime
         .search_anime(&query)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_watching_anime(state: tauri::State<'_, Api>) -> Result<Vec<Anime>, String> {
+    const WATCHING_URL: &str = "https://shinden.pl/user/watching";
+
+    let html = state
+        .0
+        .get_html(WATCHING_URL)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let parsed = parse_watching_list(&html);
+    Ok(parsed
+        .into_iter()
+        .filter(|anime| has_available_episodes(&anime.episodes))
+        .collect())
 }
 
 #[tauri::command]
@@ -104,6 +200,7 @@ pub fn run() {
             get_user_name,
             get_user_profile_image,
             logout,
+            get_watching_anime,
             get_episodes,
             get_players,
             get_iframe,

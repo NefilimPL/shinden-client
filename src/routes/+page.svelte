@@ -5,7 +5,6 @@
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {goto} from "$app/navigation";
 
-
     let animeName: string = $state("");
 
     globalStates.loadingState = LoadingState.LOADING;
@@ -28,6 +27,10 @@
         goto("/search");
     }
 
+    function handleWatchlist(event: Event) {
+        event.preventDefault();
+        goto("/watchlist");
+    }
 </script>
 
 <div class="hero bg-base-200 min-h-full">
@@ -61,6 +64,11 @@
                 </label>
                 <button class="btn btn-primary join-item">Szukaj</button>
             </form>
+            <div class="mt-4">
+                <button class="btn btn-secondary" onclick={handleWatchlist}>
+                    Lista aktualnie oglądanych
+                </button>
+            </div>
         </div>
     </div>
 </div>
