@@ -9,8 +9,34 @@
 
 ## 🧩 Co to jest?
 
-**Shinden Client** to natywna aplikacja do przeglądania i oglądania anime na Shinden.pl — bez reklam, śledzenia i zbędnych elementów.  
+**Shinden Client** to natywna aplikacja do przeglądania i oglądania anime na Shinden.pl — bez reklam, śledzenia i zbędnych elementów.
 Zamiast przeglądarki, dostajesz lekki, szybki i skoncentrowany na treści interfejs, który po prostu działa.
+
+## 🐍 Eksperymentalny port Python
+
+Repozytorium zawiera teraz wstępny szkic lekkiego launchera w Pythonie. Jest to alternatywna, prosta aplikacja w Tkinterze, która odtwarza podstawowe komendy z warstwy Tauri (wyszukiwanie, logowanie, pobieranie listy odcinków/odtwarzaczy) w trybie mockowym.
+
+### Uruchomienie
+
+1. Zainstaluj zależności Pythona (opcjonalnie `httpx` dla pełnych requestów; fallback działa na wbudowanym `urllib`):
+
+   ```bash
+   cd python_app
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. Startuj GUI lub tryb CLI:
+
+   ```bash
+   # GUI (domyślnie w trybie mock, bez potrzeby konta)
+   python -m python_app.launcher
+
+   # Tryb CLI z jednorazowym wyszukiwaniem
+   python -m python_app.launcher --cli --search "hunter"
+   ```
+
+Kod w `python_app/` jest świadomie izolowany i może być rozwijany niezależnie od wersji Tauri.
 
 ## 🌟 Najważniejsze cechy
 
