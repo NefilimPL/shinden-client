@@ -38,8 +38,9 @@
         }
     })
 
-    async function handleButton(url: string) {
-        params.seriesUrl = url;
+    async function handleButton(anime: Anime) {
+        params.seriesUrl = anime.url;
+        params.animeName = anime.name;
         await goto("/episodes");
     }
 </script>
@@ -71,11 +72,11 @@
                     </div>
                     {#if anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
                         <div class="badge badge-warning">Zaloguj się aby obejrzeć</div>
-                        <button disabled data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime.url) }}>
+                        <button disabled data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime) }}>
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
                     {:else}
-                        <button data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime.url) }}>
+                        <button data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime) }}>
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
                     {/if}

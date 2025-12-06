@@ -6,8 +6,10 @@
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
+    import {autoDownloadSettings, isSeriesTracked, toggleSeriesTracking, trackedSeries} from "$lib/autodownload.svelte";
 
     let episodes: Episode[] = $state([]);
+    let tracked: boolean = $state(false);
 
     onMount(async ()=>{
        try {
@@ -24,9 +26,19 @@
        }
     });
 
+    $effect(()=>{
+        trackedSeries.length;
+        tracked = isSeriesTracked(params.seriesUrl);
+    });
+
     async function handleButton(url: string) {
         params.playersUrl = url;
         await goto("/players");
+    }
+
+    function toggleTracking() {
+        toggleSeriesTracking(params.seriesUrl, params.animeName || "Nieznane anime");
+        tracked = isSeriesTracked(params.seriesUrl);
     }
 </script>
 
@@ -40,6 +52,26 @@
         <div class="skeleton h-32 w-full"></div>
     </div>
 {:else if globalStates.loadingState === LoadingState.OK}
+    <div class="p-4">
+        <div class="bg-base-200 rounded-lg p-4 shadow-sm flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="font-semibold text-lg">Autopobieranie serii</p>
+                    <p class="text-sm opacity-70">Źródła według priorytetów: {autoDownloadSettings.sources.filter((s)=>s.enabled).map((s)=>s.id).join(", ")}</p>
+                </div>
+                <button class={`btn ${tracked ? "btn-success" : "btn-outline"}`} onclick={toggleTracking}>
+                    {tracked ? "Oznaczono do autopobierania" : "Dodaj do autopobierania"}
+                </button>
+            </div>
+            <div class="flex gap-4 text-sm opacity-80">
+                <div class="badge">{autoDownloadSettings.copies} kopii</div>
+                <div class="badge">Godziny: {autoDownloadSettings.hours.start} - {autoDownloadSettings.hours.end}</div>
+                <div class="badge">Folder: {autoDownloadSettings.folder}</div>
+                <div class="badge">Język: {autoDownloadSettings.language === "pl" ? "Napisy PL" : autoDownloadSettings.language === "en" ? "Napisy EN" : "Inne"}</div>
+                <div class={`badge ${autoDownloadSettings.enabled ? "badge-success" : "badge-outline"}`}>{autoDownloadSettings.enabled ? "Autopobieranie włączone" : "Autopobieranie wyłączone"}</div>
+            </div>
+        </div>
+    </div>
     {#if episodes.length > 0}
     <div class="flex flex-col h-full w-full overflow-y-scroll">
         <ul class="list bg-base-100 rounded-box shadow-md">

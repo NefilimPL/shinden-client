@@ -12,6 +12,7 @@
     </div>
     <div class="flex-none">
         <ul class="menu menu-horizontal px-1 flex items-center">
+            <li><a class="btn btn-ghost" href="/settings">Ustawienia</a></li>
             <li><AccountButton/></li>
             <li><UpdateButton/></li>
         </ul>
