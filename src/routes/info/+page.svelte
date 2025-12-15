@@ -49,6 +49,7 @@
 </div>
 
 <div class="divider px-4"></div>
+
 <div class="hero">
     <div class="hero-overlay bg-base-100/90"></div>
     <div class="hero-content text-center">
@@ -74,8 +75,14 @@
                     </a>
                 </div>
             </div>
-            <a target="_blank" href="https://github.com/Tsugumik"><img src="/Badge.svg" width="200" alt="Badge" class="drop-shadow-sm drop-shadow-base-content"></a>
+
         </div>
     </div>
+</div>
+
+<div class="divider px-4"></div>
+<div class="bg-base-300 p-4 rounded-lg mx-auto w-fit text-center">
+    Made with ❤️ by
+    <a href="https://github.com/Tsugumik" class="link" target="_blank">Błażej Drozd</a>
 </div>
 
