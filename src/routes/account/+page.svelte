@@ -57,9 +57,9 @@
                 <form class="card-body" onsubmit={handleLogin}>
                     <fieldset class="fieldset">
                         <label for="email" class="label">Email</label>
-                        <input id="email" type="email" class="input" placeholder="Email" required bind:value={email} />
+                        <input id="email" type="email" class="input w-full" placeholder="Email" required bind:value={email} />
                         <label for="password" class="label">Hasło</label>
-                        <input id="password" type="password" class="input" placeholder="Hasło" required bind:value={password} />
+                        <input id="password" type="password" class="input w-full" placeholder="Hasło" required bind:value={password} />
                         <button class="btn btn-neutral mt-4">Zaloguj się</button>
                     </fieldset>
                 </form>
