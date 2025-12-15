@@ -1,6 +1,6 @@
 [package]
 name = "ShindenClient"
-version = "4.0.1"
+version = "4.0.2"
 description = "A Tauri App"
 authors = ["Błażej Drozd"]
 edition = "2021"
