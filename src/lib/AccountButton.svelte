@@ -1,5 +1,4 @@
 <script lang="ts">
-    import {invoke} from "@tauri-apps/api/core";
     import {getUserData, globalStates} from "$lib/global.svelte";
     import {onMount} from "svelte";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
@@ -26,16 +25,25 @@
 {#if loading}
     <span class="loading loading-dots loading-md"></span>
     {:else }
-    {#if globalStates.user.name}
-        {globalStates.user.name}
-        <div class="avatar">
-            <div class="w-8 rounded">
-                <img
-                        src={globalStates.user.image_url}
-                        alt="Avatar"
-                />
-            </div>
-        </div>
+        {#if globalStates.user.name}
+            {globalStates.user.name}
+            {#if globalStates.user.image_url}
+                <div class="avatar">
+                    <div class="w-8 rounded">
+
+                            <img
+                                    src={globalStates.user.image_url}
+                                    alt="Avatar"
+                            />
+                    </div>
+                </div>
+            {:else}
+                <div class="avatar avatar-placeholder">
+                    <div class="bg-neutral text-neutral-content w-8 rounded">
+                        <span class="text-sm">{globalStates.user.name[0]}</span>
+                    </div>
+                </div>
+            {/if}
         {:else }
         Zaloguj się
     {/if}

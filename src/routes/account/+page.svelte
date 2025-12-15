@@ -67,11 +67,19 @@
         </div>
         {:else}
             <div class="hero-content flex-col">
-                <img
-                        src={globalStates.user.image_url}
-                        class="max-w-sm rounded-lg shadow-2xl"
-                        alt="Avatar"
-                />
+                {#if globalStates.user.image_url}
+                    <img
+                            src={globalStates.user.image_url}
+                            class="max-w-sm rounded-lg shadow-2xl"
+                            alt="Avatar"
+                    />
+                {:else}
+                    <div class="avatar avatar-placeholder">
+                        <div class="bg-neutral text-neutral-content w-24 rounded">
+                            <span class="text-lg">{globalStates.user.name[0]}</span>
+                        </div>
+                    </div>
+                {/if}
                 <div class="text-center">
                     <h1 class="text-5xl font-bold">Zalogowano jako {globalStates.user.name}</h1>
                     <p class="py-6">
