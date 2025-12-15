@@ -56,10 +56,10 @@
             <div class="card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl">
                 <form class="card-body" onsubmit={handleLogin}>
                     <fieldset class="fieldset">
-                        <label class="label">Email</label>
-                        <input type="email" class="input" placeholder="Email" required bind:value={email} />
-                        <label class="label">Hasło</label>
-                        <input type="password" class="input" placeholder="Hasło" required bind:value={password} />
+                        <label for="email" class="label">Email</label>
+                        <input id="email" type="email" class="input w-full" placeholder="Email" required bind:value={email} />
+                        <label for="password" class="label">Hasło</label>
+                        <input id="password" type="password" class="input w-full" placeholder="Hasło" required bind:value={password} />
                         <button class="btn btn-neutral mt-4">Zaloguj się</button>
                     </fieldset>
                 </form>
@@ -67,11 +67,19 @@
         </div>
         {:else}
             <div class="hero-content flex-col">
-                <img
-                        src={globalStates.user.image_url}
-                        class="max-w-sm rounded-lg shadow-2xl"
-                        alt="Avatar"
-                />
+                {#if globalStates.user.image_url}
+                    <img
+                            src={globalStates.user.image_url}
+                            class="max-w-sm rounded-lg shadow-2xl"
+                            alt="Avatar"
+                    />
+                {:else}
+                    <div class="avatar avatar-placeholder">
+                        <div class="bg-neutral text-neutral-content w-24 rounded">
+                            <span class="text-lg">{globalStates.user.name[0]}</span>
+                        </div>
+                    </div>
+                {/if}
                 <div class="text-center">
                     <h1 class="text-5xl font-bold">Zalogowano jako {globalStates.user.name}</h1>
                     <p class="py-6">

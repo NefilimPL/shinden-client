@@ -48,7 +48,7 @@
 
             {#each episodes as episode, i}
                 <li class="list-row flex items-center justify-between">
-                    <div class="text-4xl font-thin opacity-30 tabular-nums w-16 text-center">{i+1}</div>
+                    <div class="text-4xl font-thin opacity-30 tabular-nums w-fit min-w-16 text-center">{i+1}</div>
                     <div class="list-col-grow flex-1">
                         <div>{episode.title === "" ? "Brak nazwy odcinka" : episode.title}</div>
                     </div>
