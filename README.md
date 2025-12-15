@@ -1,4 +1,4 @@
-# 🚀 Shinden Client 4
+# Shinden Client 4
 
 > **Nowoczesna, szybka aplikacja desktopowa dla użytkowników Shinden.pl**  
 > Stworzona z pasji do anime - oparta na **Rust + Tauri + SvelteKit**.
