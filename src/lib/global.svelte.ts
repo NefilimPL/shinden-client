@@ -37,9 +37,11 @@ export async function getUserData(): Promise<boolean> {
     const username = await invoke("get_user_name");
     const user_profile_image_url = await invoke("get_user_profile_image");
 
+    const is_user_img_valid = new URL(user_profile_image_url as string).host == "shinden.pl";
+
     if(user_profile_image_url && username) {
         globalStates.user.name = username as string;
-        globalStates.user.image_url = user_profile_image_url as string;
+        globalStates.user.image_url = is_user_img_valid ? user_profile_image_url as string : "";
         return true;
     }
 
