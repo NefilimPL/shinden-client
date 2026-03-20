@@ -12,20 +12,14 @@
         await goto(`/watching`);
     }
 </script>
-        <li class="list-row items-center hover:bg-base-content/5 transition-colors group">
-            <div class="text-3xl font-black opacity-10 tabular-nums w-12 text-center group-hover:opacity-30 transition-opacity italic">{iterator+1}</div>
-            <div class="list-col-grow flex-1 py-3">
-                <div class="text-sm font-semibold flex items-center gap-2">
-                    <span class="opacity-50">Sub:</span> {player.lang_subs}
-                </div>
-                <div class="text-xs opacity-70 flex items-center gap-2">
-                    <span class="opacity-50">Audio:</span> {player.lang_audio}
-                </div>
+        <li class="list-row flex items-center justify-between">
+            <div class="text-4xl font-thin opacity-30 tabular-nums w-16 text-center">{iterator+1}</div>
+            <div class="list-col-grow flex-1">
+                <div>Język napisów: {player.lang_subs}</div>
+                <div>Język audio: {player.lang_audio}</div>
             </div>
-            <div class="text-2xl font-black opacity-40 tabular-nums px-4 text-center font-[Orbitron]">{player.max_res}</div>
-            <div class="pr-3">
-                <button class="btn btn-circle btn-ghost group-hover:btn-accent group-hover:shadow-md transition-all" aria-label="play" onclick={async() => {await handleButton(player.online_id)}}>
-                    <svg class="size-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.14v14.72a.5.5 0 0 0 .73.44l11-7.36a.5.5 0 0 0 0-.88l-11-7.36a.5.5 0 0 0-.73.44z"/></svg>
-                </button>
-            </div>
+            <div class="text-4xl font-thin opacity-30 tabular-nums w-28 text-center">{player.max_res}</div>
+            <button class="btn btn-square btn-ghost" aria-label="play" onclick={async() => {await handleButton(player.online_id)}}>
+                <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
+            </button>
         </li>

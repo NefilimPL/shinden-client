@@ -72,37 +72,28 @@
 </script>
 
 {#if globalStates.loadingState === LoadingState.LOADING}
-    <div class="flex w-full h-full flex-col gap-8 p-4 md:p-8 max-w-5xl mx-auto">
-        <div class="flex flex-col gap-4">
-            <div class="skeleton h-4 w-48 mb-2"></div>
-            <div class="skeleton h-32 w-full rounded-2xl"></div>
-        </div>
-        <div class="flex flex-col gap-4">
-            <div class="skeleton h-4 w-32 mb-2"></div>
-            <div class="skeleton h-32 w-full rounded-2xl"></div>
-        </div>
-        <div class="flex flex-col gap-4">
-            <div class="skeleton h-4 w-40 mb-2"></div>
-            <div class="skeleton h-32 w-full rounded-2xl"></div>
-        </div>
+    <div class="flex w-full h-full flex-col gap-4 p-4">
+        <div class="skeleton h-32 w-full"></div>
+        <div class="skeleton h-32 w-full"></div>
+        <div class="skeleton h-32 w-full"></div>
+        <div class="skeleton h-32 w-full"></div>
+        <div class="skeleton h-32 w-full"></div>
     </div>
 {:else if globalStates.loadingState === LoadingState.OK}
-    <div class="w-full max-w-5xl mx-auto py-4 md:py-8">
-        {#if players.length > 0}
-            <Players keys={builtIn} group={grouped}>
-                <BuiltIn /> <Secure />
-            </Players>
-            <Players keys={safe} group={grouped}>
-                <Secure />
-            </Players>
-            <Players keys={unknown} group={grouped}>
-                <Unknown />
-            </Players>
-            <Players keys={unsafe} group={grouped}>
-                <Unsecure />
-            </Players>
-        {:else}
-            <Empty />
-        {/if}
-    </div>
+    {#if players.length > 0}
+        <Players keys={builtIn} group={grouped}>
+            <BuiltIn /> <Secure />
+        </Players>
+        <Players keys={safe} group={grouped}>
+            <Secure />
+        </Players>
+        <Players keys={unknown} group={grouped}>
+            <Unknown />
+        </Players>
+        <Players keys={unsafe} group={grouped}>
+            <Unsecure />
+        </Players>
+    {:else}
+    <Empty />
+    {/if}
 {/if}
