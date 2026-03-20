@@ -5,7 +5,7 @@
     let { children } = $props();
 </script>
 
-<div class="h-screen flex flex-col">
+<div class="h-screen flex flex-col bg-base-100">
     <Navbar/>
     <div class="flex-1 overflow-y-auto">
         {@render children()}
