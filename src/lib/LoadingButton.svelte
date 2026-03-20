@@ -3,31 +3,28 @@
     import Error from "$lib/logs/Error.svelte";
     import Console from "$lib/Console.svelte";
 
-    let htmlClass = $state("");
-
-    let startTime: number = $state(0), endTime: number = $state(0), operationTime: number = $state(0);
-
-    $effect(()=> {
-        if (globalStates.loadingState === LoadingState.OK) {
-            htmlClass = "bg-success";
-        } else if (globalStates.loadingState === LoadingState.ERROR) {
-            htmlClass = "bg-error";
-        } else if (globalStates.loadingState === LoadingState.WARNING) {
-            htmlClass = "bg-warning";
-        } else {
-            htmlClass = "bg-base";
+    let htmlClass = $derived.by(() => {
+        switch (globalStates.loadingState) {
+            case LoadingState.OK: return "bg-success";
+            case LoadingState.ERROR: return "bg-error";
+            case LoadingState.WARNING: return "bg-warning";
+            default: return "bg-base";
         }
     });
+
+    let startTime: number = 0;
+    let operationTime: number = $state(0);
 
     $effect(()=> {
         if(globalStates.loadingState === LoadingState.LOADING) {
             operationTime = 0;
             startTime = performance.now();
         } else {
-            endTime = performance.now();
-            operationTime = endTime - startTime;
+            if (startTime > 0) {
+                operationTime = performance.now() - startTime;
+            }
         }
-    })
+    });
 </script>
 
 <div class="flex flex-row items-center gap-2">
