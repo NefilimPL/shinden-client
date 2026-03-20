@@ -81,7 +81,7 @@
 </div>
 
 <div class="divider px-4"></div>
-<div class="bg-base-300 p-4 rounded-lg mx-auto w-fit text-center">
+<div class="bg-base-200 p-4 rounded-lg mx-auto w-fit text-center shadow-md">
     Made with ❤️ by
     <a href="https://github.com/Tsugumik" class="link" target="_blank">Błażej Drozd</a>
 </div>

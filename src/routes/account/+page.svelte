@@ -43,7 +43,7 @@
     }
 </script>
 
-<div class="hero bg-base-200 h-full">
+<div class="hero bg-base-100 h-full">
     {#if !globalStates.user.name}
         <div class="hero-content flex-col">
             <div class="text-center py-6">

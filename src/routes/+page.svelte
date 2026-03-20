@@ -30,7 +30,7 @@
 
 </script>
 
-<div class="hero bg-base-200 min-h-full">
+<div class="hero bg-base-100 min-h-full">
     <div class="hero-content flex-row">
         <img
                 src="/bg.jpg"
