@@ -10,6 +10,15 @@
     src: url("/Orbitron-VariableFont_wght.ttf") format("woff2");
 }
 
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background-color: var(--fallback-b1, oklch(var(--b1) / 1));
+}
+
 body {
     font-family: "Roboto", sans-serif;
 }
