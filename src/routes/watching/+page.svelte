@@ -86,35 +86,38 @@
     {:else if globalStates.loadingState === LoadingState.OK}
 
             {#if isBuiltIn}
-            <div class="w-full h-full p-4 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-2">
-                <div class="w-full h-[70vh] flex items-center justify-center">
+            <div class="w-full h-full p-4 md:p-6 flex flex-col items-center justify-center gap-4">
+                <div class="w-full flex-1 flex items-center justify-center min-h-0">
                     {#if isMp4}
-                    <video controls autoplay src={pendingVideoUrl}>
+                    <video class="block max-w-full max-h-full rounded-2xl shadow-2xl outline-none" controls autoplay src={pendingVideoUrl}>
                     </video>
                     {:else}
                     <video
                             bind:this={videoElement}
-                            class="w-full h-full"
+                            class="block max-w-full max-h-full rounded-2xl shadow-2xl outline-none"
                             autoplay
                             controls
                             crossorigin="anonymous"
                     ></video>
                     {/if}
-
                 </div>
 
-                <div class="text-center border bg-base-300 flex flex-col gap-2 p-4 rounded-lg w-fit items-center">
-                    <h2 class="text-xl font-bold font-[Orbitron]">Built-in Player</h2>
-                    <p class="text-sm">
-                        powered by <a href="https://github.com/Tsugumik/cda-dl" target="_blank" class="link-accent font-mono">cda-dl</a>
+                <div class="w-full shrink-0 flex flex-col sm:flex-row items-center justify-between bg-base-300 shadow-md border border-base-content/5 rounded-xl px-5 py-2 gap-3">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-lg font-bold font-[Orbitron]">Built-in Player</h2>
+                        <p class="badge badge-info badge-sm shadow-sm">{isMp4 ? "Native" : "dash.js"}</p>
+                    </div>
+                    <p class="text-xs text-base-content/70 text-center sm:text-right">
+                        powered by <a href="https://github.com/Tsugumik/cda-dl" target="_blank" class="link link-hover link-accent font-mono">cda-dl</a>
                         - part of <span class="font-[Orbitron]">Shinden Client</span>
                     </p>
-                    <p class="badge badge-info">{isMp4 ? "Native" : "dash.js"}</p>
                 </div>
             </div>
             {:else}
-            <div class="border">
-                {@html iframeHtml}
+            <div class="w-full h-full p-4 md:p-6 flex items-center justify-center">
+                <div class="w-full max-w-7xl max-h-full rounded-2xl shadow-2xl overflow-hidden [&>iframe]:block [&>iframe]:w-full [&>iframe]:aspect-video [&>iframe]:max-h-full">
+                    {@html iframeHtml}
+                </div>
             </div>
             {/if}
     {/if}
