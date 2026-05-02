@@ -1,17 +1,20 @@
 use reqwest::header::ACCEPT;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use shinden_pl_api::client::ShindenAPI;
 use shinden_pl_api::models::{Anime, Episode, Player};
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const WATCHING_LIST_PAGE_LIMIT: usize = 100;
+const WATCHING_CACHE_TTL_MS: u64 = 30 * 60 * 1000;
 const SHINDEN_TITLE_PLACEHOLDER: &str =
     "https://shinden.pl/res/other/placeholders/title/100x100.jpg";
 
-struct Api(ShindenAPI);
+struct Api(ShindenAPI, Mutex<WatchingCacheRefreshStatus>);
 
 #[derive(Debug, Deserialize)]
 struct WatchingListApiResponse {
@@ -61,6 +64,44 @@ impl WatchingAnimeFilter {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WatchingAvailabilityCache {
+    entries: HashMap<String, WatchingAvailabilityCacheEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct WatchingAvailabilityCacheEntry {
+    title_id: u64,
+    watched_episodes_cnt: u32,
+    total_episodes: Option<u32>,
+    has_available_unwatched_episode: bool,
+    subtitle_availability: HashMap<String, bool>,
+    checked_at_ms: u64,
+}
+
+#[derive(Debug, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct WatchingCacheRefreshStatus {
+    running: bool,
+    current: usize,
+    total: usize,
+    refreshed: usize,
+    skipped: usize,
+    failed: usize,
+    current_title: String,
+    last_finished_at_ms: Option<u64>,
+    last_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WatchingCacheRefreshSummary {
+    status: WatchingCacheRefreshStatus,
+    already_running: bool,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -97,8 +138,75 @@ async fn get_watching_anime(
     filter: Option<WatchingAnimeFilter>,
 ) -> Result<Vec<Anime>, String> {
     let filter = filter.unwrap_or_default();
-    let profile_html = state
-        .0
+    let cache = load_watching_availability_cache();
+    let items = fetch_all_watching_items(&state.0).await?;
+
+    Ok(items
+        .into_iter()
+        .filter(|item| watching_cache_filter_matches(item, &filter, &cache))
+        .filter_map(map_watching_list_item)
+        .collect())
+}
+
+#[tauri::command]
+fn get_watching_cache_refresh_status(
+    state: tauri::State<'_, Api>,
+) -> Result<WatchingCacheRefreshStatus, String> {
+    refresh_status_snapshot(&state.1)
+}
+
+#[tauri::command]
+async fn refresh_watching_anime_cache(
+    state: tauri::State<'_, Api>,
+    filter: Option<WatchingAnimeFilter>,
+    force: Option<bool>,
+) -> Result<WatchingCacheRefreshSummary, String> {
+    let filter = filter.unwrap_or_default();
+    let force = force.unwrap_or(false);
+
+    {
+        let mut status = lock_refresh_status(&state.1)?;
+        if status.running {
+            return Ok(WatchingCacheRefreshSummary {
+                status: status.clone(),
+                already_running: true,
+            });
+        }
+
+        *status = WatchingCacheRefreshStatus {
+            running: true,
+            current: 0,
+            total: 0,
+            refreshed: 0,
+            skipped: 0,
+            failed: 0,
+            current_title: String::new(),
+            last_finished_at_ms: status.last_finished_at_ms,
+            last_error: None,
+        };
+    }
+
+    let refresh_result = refresh_watching_cache_inner(&state.0, &state.1, &filter, force).await;
+
+    match refresh_result {
+        Ok(status) => Ok(WatchingCacheRefreshSummary {
+            status,
+            already_running: false,
+        }),
+        Err(error) => {
+            update_refresh_status(&state.1, |status| {
+                status.running = false;
+                status.current_title.clear();
+                status.last_finished_at_ms = Some(unix_timestamp_ms_u64());
+                status.last_error = Some(error.clone());
+            })?;
+            Err(error)
+        }
+    }
+}
+
+async fn fetch_all_watching_items(api: &ShindenAPI) -> Result<Vec<WatchingListApiItem>, String> {
+    let profile_html = api
         .get_html("https://shinden.pl/user")
         .await
         .map_err(|e| command_error("get_watching_anime profile", e))?;
@@ -106,21 +214,14 @@ async fn get_watching_anime(
         .ok_or_else(|| command_error("get_watching_anime profile", "User is not logged in"))?;
 
     let mut offset = 0;
-    let mut anime = Vec::new();
+    let mut items = Vec::new();
 
     loop {
-        let page = fetch_watching_list_page(&state.0, &user_id, WATCHING_LIST_PAGE_LIMIT, offset)
-            .await?;
+        let page = fetch_watching_list_page(api, &user_id, WATCHING_LIST_PAGE_LIMIT, offset).await?;
         let loaded = page.items.len();
         let total = page.count;
 
-        for item in page.items {
-            if should_include_watching_item(&state.0, &item, &filter).await? {
-                if let Some(mapped) = map_watching_list_item(item) {
-                    anime.push(mapped);
-                }
-            }
-        }
+        items.extend(page.items);
 
         offset += loaded;
         if loaded == 0 || offset >= total {
@@ -128,7 +229,7 @@ async fn get_watching_anime(
         }
     }
 
-    Ok(anime)
+    Ok(items)
 }
 
 #[tauri::command]
@@ -239,33 +340,93 @@ async fn fetch_watching_list_page(
     Ok(payload.result)
 }
 
-async fn should_include_watching_item(
+async fn refresh_watching_cache_inner(
     api: &ShindenAPI,
-    item: &WatchingListApiItem,
+    status: &Mutex<WatchingCacheRefreshStatus>,
     filter: &WatchingAnimeFilter,
-) -> Result<bool, String> {
-    if !watching_progress_filter_matches(item, filter) {
-        return Ok(false);
+    force: bool,
+) -> Result<WatchingCacheRefreshStatus, String> {
+    let items = fetch_all_watching_items(api).await?;
+    let mut cache = load_watching_availability_cache();
+    let subtitle_key = selected_subtitle_language_key(filter);
+    let now_ms = unix_timestamp_ms_u64();
+
+    update_refresh_status(status, |status| {
+        status.total = items.len();
+    })?;
+
+    for (index, item) in items.iter().enumerate() {
+        update_refresh_status(status, |status| {
+            status.current = index + 1;
+            status.current_title = item.title.clone();
+        })?;
+
+        if !has_unwatched_episodes(item) {
+            update_refresh_status(status, |status| {
+                status.skipped += 1;
+            })?;
+            continue;
+        }
+
+        let cache_key = watching_cache_key(item.title_id);
+        if cache
+            .entries
+            .get(&cache_key)
+            .is_some_and(|entry| {
+                cache_entry_satisfies_refresh(
+                    entry,
+                    item,
+                    subtitle_key.as_deref(),
+                    now_ms,
+                    force,
+                )
+            })
+        {
+            update_refresh_status(status, |status| {
+                status.skipped += 1;
+            })?;
+            continue;
+        }
+
+        match scan_watching_item_availability(api, item, subtitle_key.as_deref()).await {
+            Ok(entry) => {
+                cache.entries.insert(cache_key, entry);
+                save_watching_availability_cache(&cache)?;
+                update_refresh_status(status, |status| {
+                    status.refreshed += 1;
+                })?;
+            }
+            Err(error) => {
+                update_refresh_status(status, |status| {
+                    status.failed += 1;
+                    status.last_error = Some(error.clone());
+                })?;
+            }
+        }
     }
 
-    if !filter.check_subtitle_availability_online() {
-        return Ok(true);
-    }
+    update_refresh_status(status, |status| {
+        status.running = false;
+        status.current_title.clear();
+        status.last_finished_at_ms = Some(unix_timestamp_ms_u64());
+    })?;
 
-    has_available_episode_with_subtitle_language(api, item, filter.subtitle_language()).await
+    refresh_status_snapshot(status)
 }
 
-async fn has_available_episode_with_subtitle_language(
+async fn scan_watching_item_availability(
     api: &ShindenAPI,
     item: &WatchingListApiItem,
-    subtitle_language: &str,
-) -> Result<bool, String> {
+    subtitle_key: Option<&str>,
+) -> Result<WatchingAvailabilityCacheEntry, String> {
     let series_url = series_url(item.title_id);
     let episodes = api
         .get_episodes(&series_url)
         .await
         .map_err(|e| command_error("get_watching_anime episodes", e))?;
     let watched_count = watched_episode_count(item) as usize;
+    let mut has_available_unwatched_episode = false;
+    let mut subtitle_availability = HashMap::new();
 
     for episode in episodes.into_iter().skip(watched_count) {
         let players = api
@@ -273,15 +434,37 @@ async fn has_available_episode_with_subtitle_language(
             .await
             .map_err(|e| command_error("get_watching_anime players", e))?;
 
-        if players
-            .iter()
-            .any(|player| subtitle_language_matches(&player.lang_subs, subtitle_language))
-        {
-            return Ok(true);
+        if players.is_empty() {
+            continue;
+        }
+
+        has_available_unwatched_episode = true;
+
+        if let Some(key) = subtitle_key {
+            if players
+                .iter()
+                .any(|player| subtitle_language_matches(&player.lang_subs, key))
+            {
+                subtitle_availability.insert(key.to_string(), true);
+                break;
+            }
+        } else {
+            break;
         }
     }
 
-    Ok(false)
+    if let Some(key) = subtitle_key {
+        subtitle_availability.entry(key.to_string()).or_insert(false);
+    }
+
+    Ok(WatchingAvailabilityCacheEntry {
+        title_id: item.title_id,
+        watched_episodes_cnt: watched_episode_count(item),
+        total_episodes: item.episodes,
+        has_available_unwatched_episode,
+        subtitle_availability,
+        checked_at_ms: unix_timestamp_ms_u64(),
+    })
 }
 
 fn watching_list_url(user_id: &str, limit: usize, offset: usize) -> String {
@@ -346,6 +529,84 @@ fn watching_progress_filter_matches(
     filter: &WatchingAnimeFilter,
 ) -> bool {
     !filter.only_available_unwatched() || has_unwatched_episodes(item)
+}
+
+fn watching_cache_filter_matches(
+    item: &WatchingListApiItem,
+    filter: &WatchingAnimeFilter,
+    cache: &WatchingAvailabilityCache,
+) -> bool {
+    if !watching_progress_filter_matches(item, filter) {
+        return false;
+    }
+
+    if !filter.only_available_unwatched() {
+        return true;
+    }
+
+    let Some(entry) = cache.entries.get(&watching_cache_key(item.title_id)) else {
+        return false;
+    };
+
+    if !cache_entry_matches_item(entry, item) || !entry.has_available_unwatched_episode {
+        return false;
+    }
+
+    selected_subtitle_language_key(filter)
+        .map(|key| {
+            entry
+                .subtitle_availability
+                .get(&key)
+                .copied()
+                .unwrap_or(false)
+        })
+        .unwrap_or(true)
+}
+
+fn cache_entry_matches_item(
+    entry: &WatchingAvailabilityCacheEntry,
+    item: &WatchingListApiItem,
+) -> bool {
+    entry.title_id == item.title_id
+        && entry.watched_episodes_cnt == watched_episode_count(item)
+        && entry.total_episodes == item.episodes
+}
+
+fn cache_entry_satisfies_refresh(
+    entry: &WatchingAvailabilityCacheEntry,
+    item: &WatchingListApiItem,
+    subtitle_key: Option<&str>,
+    now_ms: u64,
+    force: bool,
+) -> bool {
+    if force || !cache_entry_matches_item(entry, item) {
+        return false;
+    }
+
+    if now_ms.saturating_sub(entry.checked_at_ms) > WATCHING_CACHE_TTL_MS {
+        return false;
+    }
+
+    subtitle_key
+        .map(|key| entry.subtitle_availability.contains_key(key))
+        .unwrap_or(true)
+}
+
+fn selected_subtitle_language_key(filter: &WatchingAnimeFilter) -> Option<String> {
+    if !filter.check_subtitle_availability_online() {
+        return None;
+    }
+
+    let key = subtitle_language_key(filter.subtitle_language());
+    if key.is_empty() || key == "any" {
+        None
+    } else {
+        Some(key)
+    }
+}
+
+fn watching_cache_key(title_id: u64) -> String {
+    title_id.to_string()
 }
 
 fn watched_episode_count(item: &WatchingListApiItem) -> u32 {
@@ -428,6 +689,65 @@ fn format_episode_progress(watched: Option<&str>, total: Option<u32>) -> String 
     }
 }
 
+fn load_watching_availability_cache() -> WatchingAvailabilityCache {
+    load_watching_availability_cache_from(&watching_availability_cache_path())
+}
+
+fn load_watching_availability_cache_from(path: &Path) -> WatchingAvailabilityCache {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<WatchingAvailabilityCache>(&contents).ok())
+        .unwrap_or_default()
+}
+
+fn save_watching_availability_cache(cache: &WatchingAvailabilityCache) -> Result<(), String> {
+    save_watching_availability_cache_to(&watching_availability_cache_path(), cache)
+        .map_err(|e| command_error("watching_cache save", e))
+}
+
+fn save_watching_availability_cache_to(
+    path: &Path,
+    cache: &WatchingAvailabilityCache,
+) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = serde_json::to_string_pretty(cache)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    fs::write(path, contents)
+}
+
+fn watching_availability_cache_path() -> PathBuf {
+    resolve_project_cache_dir().join("watching-anime-cache.json")
+}
+
+fn lock_refresh_status(
+    status: &Mutex<WatchingCacheRefreshStatus>,
+) -> Result<std::sync::MutexGuard<'_, WatchingCacheRefreshStatus>, String> {
+    status
+        .lock()
+        .map_err(|_| command_error("watching_cache status", "Status lock poisoned"))
+}
+
+fn refresh_status_snapshot(
+    status: &Mutex<WatchingCacheRefreshStatus>,
+) -> Result<WatchingCacheRefreshStatus, String> {
+    Ok(lock_refresh_status(status)?.clone())
+}
+
+fn update_refresh_status<F>(
+    status: &Mutex<WatchingCacheRefreshStatus>,
+    update: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&mut WatchingCacheRefreshStatus),
+{
+    let mut status = lock_refresh_status(status)?;
+    update(&mut status);
+    Ok(())
+}
+
 fn command_error<E: ToString>(context: &str, error: E) -> String {
     let message = error.to_string();
     let _ = append_project_log("ERROR", &format!("{context}: {message}"));
@@ -458,6 +778,10 @@ fn unix_timestamp_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
+}
+
+fn unix_timestamp_ms_u64() -> u64 {
+    unix_timestamp_ms().min(u64::MAX as u128) as u64
 }
 
 fn resolve_project_log_dir() -> PathBuf {
@@ -493,6 +817,41 @@ fn resolve_project_log_dir() -> PathBuf {
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("logs")
+}
+
+fn resolve_project_cache_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("SHINDEN_CLIENT_CACHE_DIR") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+
+    if let Some(root) = option_env!("SHINDEN_BUILD_PROJECT_ROOT") {
+        let path = PathBuf::from(root);
+        if is_project_root(&path) {
+            return path.join("cache");
+        }
+    }
+
+    let mut starts = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            starts.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        starts.push(current_dir);
+    }
+
+    for start in starts {
+        if let Some(root) = find_project_root_from(&start) {
+            return root.join("cache");
+        }
+    }
+
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cache")
 }
 
 fn find_project_root_from(start: &Path) -> Option<PathBuf> {
@@ -536,7 +895,7 @@ pub fn run() {
     if let Err(error) = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_http::init())
-        .manage(Api(api))
+        .manage(Api(api, Mutex::new(WatchingCacheRefreshStatus::default())))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -544,6 +903,8 @@ pub fn run() {
             test_connection,
             search,
             get_watching_anime,
+            get_watching_cache_refresh_status,
+            refresh_watching_anime_cache,
             login,
             get_user_name,
             get_user_profile_image,
@@ -734,5 +1095,106 @@ mod tests {
         };
 
         assert!(filter.check_subtitle_availability_online());
+    }
+
+    #[test]
+    fn cache_filter_hides_items_without_confirmed_available_episode() {
+        let item = watching_item(Some("2"), Some(3));
+        let filter = WatchingAnimeFilter {
+            only_available_unwatched: Some(true),
+            ..Default::default()
+        };
+        let mut cache = WatchingAvailabilityCache::default();
+
+        assert!(!watching_cache_filter_matches(&item, &filter, &cache));
+
+        cache.entries.insert(
+            "59922".to_string(),
+            WatchingAvailabilityCacheEntry {
+                title_id: 59922,
+                watched_episodes_cnt: 2,
+                total_episodes: Some(3),
+                has_available_unwatched_episode: false,
+                subtitle_availability: Default::default(),
+                checked_at_ms: 1000,
+            },
+        );
+
+        assert!(!watching_cache_filter_matches(&item, &filter, &cache));
+    }
+
+    #[test]
+    fn cache_filter_uses_cached_subtitle_language_availability() {
+        let item = watching_item(Some("2"), Some(3));
+        let filter = WatchingAnimeFilter {
+            only_available_unwatched: Some(true),
+            check_subtitle_availability_online: Some(true),
+            subtitle_language: Some("PL".to_string()),
+        };
+        let mut subtitle_availability = std::collections::HashMap::new();
+        subtitle_availability.insert("pl".to_string(), true);
+        let mut cache = WatchingAvailabilityCache::default();
+        cache.entries.insert(
+            "59922".to_string(),
+            WatchingAvailabilityCacheEntry {
+                title_id: 59922,
+                watched_episodes_cnt: 2,
+                total_episodes: Some(3),
+                has_available_unwatched_episode: true,
+                subtitle_availability,
+                checked_at_ms: 1000,
+            },
+        );
+
+        assert!(watching_cache_filter_matches(&item, &filter, &cache));
+
+        let english_filter = WatchingAnimeFilter {
+            only_available_unwatched: Some(true),
+            check_subtitle_availability_online: Some(true),
+            subtitle_language: Some("EN".to_string()),
+        };
+
+        assert!(!watching_cache_filter_matches(
+            &item,
+            &english_filter,
+            &cache
+        ));
+    }
+
+    #[test]
+    fn fresh_cache_entry_skips_refresh_only_when_requested_language_is_cached() {
+        let item = watching_item(Some("2"), Some(3));
+        let mut subtitle_availability = std::collections::HashMap::new();
+        subtitle_availability.insert("pl".to_string(), true);
+        let entry = WatchingAvailabilityCacheEntry {
+            title_id: 59922,
+            watched_episodes_cnt: 2,
+            total_episodes: Some(3),
+            has_available_unwatched_episode: true,
+            subtitle_availability,
+            checked_at_ms: 10_000,
+        };
+
+        assert!(cache_entry_satisfies_refresh(
+            &entry,
+            &item,
+            Some("pl"),
+            10_500,
+            false
+        ));
+        assert!(!cache_entry_satisfies_refresh(
+            &entry,
+            &item,
+            Some("en"),
+            10_500,
+            false
+        ));
+        assert!(!cache_entry_satisfies_refresh(
+            &entry,
+            &item,
+            Some("pl"),
+            10_500,
+            true
+        ));
     }
 }

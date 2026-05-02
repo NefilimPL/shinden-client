@@ -12,6 +12,7 @@ vite.config.ts.timestamp-*
 
 # Local logs and diagnostics
 /logs/
+/cache/
 *.log
 
 # Local EXE build outputs
