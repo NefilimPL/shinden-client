@@ -25,6 +25,7 @@ shinden-pl-api = "0.1.5"
 cda-dl = "0.1.0"
 reqwest = "0.12.22"
 tauri-plugin-http = "2"
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 warp = "0.4.2"
 
