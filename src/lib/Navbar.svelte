@@ -4,6 +4,7 @@
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import UpdateButton from "$lib/logs/UpdateButton.svelte";
     import { onMount } from "svelte";
+    import { globalStates } from "$lib/global.svelte";
 
     let isDark = $state(true);
 
@@ -26,6 +27,9 @@
     </div>
     <div class="flex-none">
         <ul class="menu menu-horizontal px-1 flex items-center">
+            {#if globalStates.user.name}
+                <li><a class="btn btn-ghost btn-sm" href="/watchlist">Ogladam</a></li>
+            {/if}
             <li><AccountButton/></li>
             <li><UpdateButton/></li>
         </ul>

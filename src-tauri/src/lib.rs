@@ -1,3 +1,5 @@
+use reqwest::header::ACCEPT;
+use serde::Deserialize;
 use shinden_pl_api::client::ShindenAPI;
 use shinden_pl_api::models::{Anime, Episode, Player};
 use std::fs::{self, OpenOptions};
@@ -5,7 +7,37 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const WATCHING_LIST_PAGE_LIMIT: usize = 100;
+const SHINDEN_TITLE_PLACEHOLDER: &str =
+    "https://shinden.pl/res/other/placeholders/title/100x100.jpg";
+
 struct Api(ShindenAPI);
+
+#[derive(Debug, Deserialize)]
+struct WatchingListApiResponse {
+    success: bool,
+    result: WatchingListApiResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct WatchingListApiResult {
+    count: usize,
+    items: Vec<WatchingListApiItem>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchingListApiItem {
+    title_id: u64,
+    title: String,
+    cover_id: Option<u64>,
+    anime_type: Option<String>,
+    summary_rating_total: Option<String>,
+    episodes: Option<u32>,
+    watched_episodes_cnt: Option<String>,
+    description_pl: Option<String>,
+    description_en: Option<String>,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -35,6 +67,36 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Anime
         .search_anime(&query)
         .await
         .map_err(|e| command_error("search", e))
+}
+
+#[tauri::command]
+async fn get_watching_anime(state: tauri::State<'_, Api>) -> Result<Vec<Anime>, String> {
+    let profile_html = state
+        .0
+        .get_html("https://shinden.pl/user")
+        .await
+        .map_err(|e| command_error("get_watching_anime profile", e))?;
+    let user_id = extract_user_id_from_profile_html(&profile_html)
+        .ok_or_else(|| command_error("get_watching_anime profile", "User is not logged in"))?;
+
+    let mut offset = 0;
+    let mut anime = Vec::new();
+
+    loop {
+        let page = fetch_watching_list_page(&state.0, &user_id, WATCHING_LIST_PAGE_LIMIT, offset)
+            .await?;
+        let loaded = page.items.len();
+        let total = page.count;
+
+        anime.extend(page.items.into_iter().filter_map(map_watching_list_item));
+
+        offset += loaded;
+        if loaded == 0 || offset >= total {
+            break;
+        }
+    }
+
+    Ok(anime)
 }
 
 #[tauri::command]
@@ -112,6 +174,99 @@ async fn get_cda_video(_state: tauri::State<'_, Api>, url: String) -> Result<Str
     })
     .await
     .map_err(|e| command_error("get_cda_video task", e))?
+}
+
+async fn fetch_watching_list_page(
+    api: &ShindenAPI,
+    user_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<WatchingListApiResult, String> {
+    let url = watching_list_url(user_id, limit, offset);
+    let response = api
+        .client
+        .get(&url)
+        .header(ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|e| command_error("get_watching_anime request", e))?
+        .error_for_status()
+        .map_err(|e| command_error("get_watching_anime response", e))?;
+    let payload = response
+        .json::<WatchingListApiResponse>()
+        .await
+        .map_err(|e| command_error("get_watching_anime json", e))?;
+
+    if !payload.success {
+        return Err(command_error(
+            "get_watching_anime json",
+            "List API returned success=false",
+        ));
+    }
+
+    Ok(payload.result)
+}
+
+fn watching_list_url(user_id: &str, limit: usize, offset: usize) -> String {
+    format!(
+        "https://lista.shinden.pl/api/userlist/{user_id}/anime/in-progress?limit={limit}&offset={offset}"
+    )
+}
+
+fn extract_user_id_from_profile_html(html: &str) -> Option<String> {
+    ["https://lista.shinden.pl/animelist/", "/animelist/"]
+        .iter()
+        .find_map(|marker| extract_ascii_digits_after(html, marker))
+}
+
+fn extract_ascii_digits_after(source: &str, marker: &str) -> Option<String> {
+    let start = source.find(marker)? + marker.len();
+    let digits: String = source[start..]
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect();
+
+    if digits.is_empty() {
+        None
+    } else {
+        Some(digits)
+    }
+}
+
+fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
+    let name = item.title.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    Some(Anime {
+        name,
+        url: format!("https://shinden.pl/series/{}", item.title_id),
+        image_url: item
+            .cover_id
+            .map(|cover_id| format!("https://cdn.shinden.eu/cdn1/images/genuine/{cover_id}.jpg"))
+            .unwrap_or_else(|| SHINDEN_TITLE_PLACEHOLDER.to_string()),
+        anime_type: item.anime_type.unwrap_or_default(),
+        rating: format_rating(item.summary_rating_total.as_deref()),
+        episodes: format_episode_progress(item.watched_episodes_cnt.as_deref(), item.episodes),
+        description: item.description_pl.or(item.description_en).unwrap_or_default(),
+    })
+}
+
+fn format_rating(raw_rating: Option<&str>) -> String {
+    raw_rating
+        .and_then(|rating| rating.parse::<f64>().ok())
+        .map(|rating| format!("{rating:.2}").replace('.', ","))
+        .unwrap_or_default()
+}
+
+fn format_episode_progress(watched: Option<&str>, total: Option<u32>) -> String {
+    match (watched, total) {
+        (Some(watched), Some(total)) => format!("{watched}/{total}"),
+        (None, Some(total)) => format!("0/{total}"),
+        (Some(watched), None) => watched.to_string(),
+        (None, None) => String::new(),
+    }
 }
 
 fn command_error<E: ToString>(context: &str, error: E) -> String {
@@ -229,6 +384,7 @@ pub fn run() {
             write_log,
             test_connection,
             search,
+            get_watching_anime,
             login,
             get_user_name,
             get_user_profile_image,
@@ -301,5 +457,55 @@ mod tests {
             discard_log_path(Ok(PathBuf::from("shinden-client.log")));
 
         assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn extract_user_id_from_profile_links_finds_current_user_animelist() {
+        let html = r#"
+            <a href="https://lista.shinden.pl/animelist/31875-szypss">Lista Anime</a>
+            <a href="/user/31875-szypss">Profil</a>
+        "#;
+
+        let user_id = extract_user_id_from_profile_html(html);
+
+        assert_eq!(user_id.as_deref(), Some("31875"));
+    }
+
+    #[test]
+    fn map_watching_list_item_builds_series_and_cover_urls() {
+        let item = WatchingListApiItem {
+            title_id: 59922,
+            title: "Enen no Shouboutai: San no Shou".to_string(),
+            cover_id: Some(123456),
+            anime_type: Some("TV".to_string()),
+            summary_rating_total: Some("7.9000".to_string()),
+            episodes: Some(12),
+            watched_episodes_cnt: Some("3".to_string()),
+            description_pl: Some("Opis".to_string()),
+            description_en: None,
+        };
+
+        let anime = map_watching_list_item(item).expect("item should map");
+
+        assert_eq!(anime.name, "Enen no Shouboutai: San no Shou");
+        assert_eq!(anime.url, "https://shinden.pl/series/59922");
+        assert_eq!(
+            anime.image_url,
+            "https://cdn.shinden.eu/cdn1/images/genuine/123456.jpg"
+        );
+        assert_eq!(anime.anime_type, "TV");
+        assert_eq!(anime.rating, "7,90");
+        assert_eq!(anime.episodes, "3/12");
+        assert_eq!(anime.description, "Opis");
+    }
+
+    #[test]
+    fn watching_list_url_uses_in_progress_status() {
+        let url = watching_list_url("31875", 100, 200);
+
+        assert_eq!(
+            url,
+            "https://lista.shinden.pl/api/userlist/31875/anime/in-progress?limit=100&offset=200"
+        );
     }
 }

@@ -8,6 +8,7 @@ version = "4.0.3"
 dependencies = [
  "cda-dl",
  "reqwest 0.12.28",
+ "serde",
  "serde_json",
  "shinden-pl-api",
  "tauri",
