@@ -44,6 +44,7 @@ struct WatchingListApiItem {
 struct WatchingAnimeFilter {
     only_available_unwatched: Option<bool>,
     subtitle_language: Option<String>,
+    check_subtitle_availability_online: Option<bool>,
 }
 
 impl WatchingAnimeFilter {
@@ -53,6 +54,10 @@ impl WatchingAnimeFilter {
 
     fn subtitle_language(&self) -> &str {
         self.subtitle_language.as_deref().unwrap_or_default()
+    }
+
+    fn check_subtitle_availability_online(&self) -> bool {
+        self.check_subtitle_availability_online.unwrap_or(false)
     }
 }
 
@@ -239,12 +244,12 @@ async fn should_include_watching_item(
     item: &WatchingListApiItem,
     filter: &WatchingAnimeFilter,
 ) -> Result<bool, String> {
-    if !filter.only_available_unwatched() {
-        return Ok(true);
+    if !watching_progress_filter_matches(item, filter) {
+        return Ok(false);
     }
 
-    if !has_unwatched_episodes(item) {
-        return Ok(false);
+    if !filter.check_subtitle_availability_online() {
+        return Ok(true);
     }
 
     has_available_episode_with_subtitle_language(api, item, filter.subtitle_language()).await
@@ -334,6 +339,13 @@ fn has_unwatched_episodes(item: &WatchingListApiItem) -> bool {
         Some(total) => watched_episode_count(item) < total,
         None => true,
     }
+}
+
+fn watching_progress_filter_matches(
+    item: &WatchingListApiItem,
+    filter: &WatchingAnimeFilter,
+) -> bool {
+    !filter.only_available_unwatched() || has_unwatched_episodes(item)
 }
 
 fn watched_episode_count(item: &WatchingListApiItem) -> u32 {
@@ -683,5 +695,44 @@ mod tests {
         assert!(subtitle_language_matches("Napisy PL", "polski"));
         assert!(subtitle_language_matches("English", "EN"));
         assert!(!subtitle_language_matches("Angielski", "PL"));
+    }
+
+    #[test]
+    fn watching_progress_filter_includes_all_items_when_disabled() {
+        let filter = WatchingAnimeFilter::default();
+
+        assert!(watching_progress_filter_matches(
+            &watching_item(Some("3"), Some(3)),
+            &filter
+        ));
+    }
+
+    #[test]
+    fn watching_progress_filter_uses_local_unwatched_counts() {
+        let filter = WatchingAnimeFilter {
+            only_available_unwatched: Some(true),
+            ..Default::default()
+        };
+
+        assert!(watching_progress_filter_matches(
+            &watching_item(Some("2"), Some(3)),
+            &filter
+        ));
+        assert!(!watching_progress_filter_matches(
+            &watching_item(Some("3"), Some(3)),
+            &filter
+        ));
+    }
+
+    #[test]
+    fn subtitle_availability_online_check_is_opt_in() {
+        assert!(!WatchingAnimeFilter::default().check_subtitle_availability_online());
+
+        let filter = WatchingAnimeFilter {
+            check_subtitle_availability_online: Some(true),
+            ..Default::default()
+        };
+
+        assert!(filter.check_subtitle_availability_online());
     }
 }

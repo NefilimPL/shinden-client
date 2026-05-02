@@ -19,8 +19,10 @@
     let showSettings = $state(false);
     let onlyAvailableUnwatched = $state(false);
     let subtitleLanguage = $state("PL");
+    let checkSubtitleAvailabilityOnline = $state(false);
     let draftOnlyAvailableUnwatched = $state(false);
     let draftSubtitleLanguage = $state("PL");
+    let draftCheckSubtitleAvailabilityOnline = $state(false);
 
     onMount(async () => {
         loadSettings();
@@ -40,6 +42,9 @@
                 typeof parsedSettings.subtitleLanguage === "string"
                     ? parsedSettings.subtitleLanguage
                     : "PL";
+            checkSubtitleAvailabilityOnline = Boolean(
+                parsedSettings.checkSubtitleAvailabilityOnline,
+            );
         } catch (e) {
             log(LogLevel.WARNING, `Error loading watchlist settings: ${e}`);
         }
@@ -51,6 +56,7 @@
             JSON.stringify({
                 onlyAvailableUnwatched,
                 subtitleLanguage,
+                checkSubtitleAvailabilityOnline,
             }),
         );
     }
@@ -64,6 +70,7 @@
                 filter: {
                     onlyAvailableUnwatched,
                     subtitleLanguage,
+                    checkSubtitleAvailabilityOnline,
                 },
             });
 
@@ -79,6 +86,7 @@
     function openSettings() {
         draftOnlyAvailableUnwatched = onlyAvailableUnwatched;
         draftSubtitleLanguage = subtitleLanguage;
+        draftCheckSubtitleAvailabilityOnline = checkSubtitleAvailabilityOnline;
         showSettings = true;
     }
 
@@ -89,6 +97,7 @@
     async function applySettings() {
         onlyAvailableUnwatched = draftOnlyAvailableUnwatched;
         subtitleLanguage = draftSubtitleLanguage;
+        checkSubtitleAvailabilityOnline = draftCheckSubtitleAvailabilityOnline;
         saveSettings();
         showSettings = false;
         await loadWatchingAnime();
@@ -117,8 +126,10 @@
                 </div>
                 <div class="text-sm opacity-80 truncate">
                     {result.length} pozycji
-                    {#if onlyAvailableUnwatched}
+                    {#if onlyAvailableUnwatched && checkSubtitleAvailabilityOnline}
                         | napisy: {subtitleLanguage || "dowolny"}
+                    {:else if onlyAvailableUnwatched}
+                        | szybki filtr
                     {/if}
                 </div>
             </div>
@@ -194,11 +205,21 @@
 
             <div class="mt-4 flex flex-col gap-4">
                 <label class="flex items-center justify-between gap-4">
-                    <span class="text-sm">Tylko z nieobejrzanym odcinkiem i napisami</span>
+                    <span class="text-sm">Tylko z nieobejrzanym odcinkiem</span>
                     <input
                         type="checkbox"
                         class="toggle toggle-primary"
                         bind:checked={draftOnlyAvailableUnwatched}
+                    />
+                </label>
+
+                <label class="flex items-center justify-between gap-4">
+                    <span class="text-sm">Sprawdzaj napisy online</span>
+                    <input
+                        type="checkbox"
+                        class="toggle toggle-primary"
+                        bind:checked={draftCheckSubtitleAvailabilityOnline}
+                        disabled={!draftOnlyAvailableUnwatched}
                     />
                 </label>
 
@@ -207,7 +228,7 @@
                     <select
                         class="select select-bordered w-full"
                         bind:value={draftSubtitleLanguage}
-                        disabled={!draftOnlyAvailableUnwatched}
+                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
                     >
                         {#each subtitleLanguageOptions as option}
                             <option value={option.value}>{option.label}</option>
