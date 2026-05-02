@@ -191,6 +191,14 @@
         return new Date(timestamp).toLocaleTimeString();
     }
 
+    function formatRefreshError(error: string) {
+        if (error.includes("error sending request")) {
+            return "Nie udalo sie sprawdzic czesci odcinkow. Sprobuj odswiezyc dane ponownie.";
+        }
+
+        return error;
+    }
+
     async function loadWatchingAnime(showLoading = true) {
         if (!showLoading && silentReloadInProgress) {
             return;
@@ -293,16 +301,24 @@
                         {#if refreshStatus.currentTitle}
                             | {refreshStatus.currentTitle}
                         {/if}
+                        {#if refreshStatus.failed}
+                            | bledy: {refreshStatus.failed}
+                        {/if}
                     </div>
                 {:else if refreshStatus.lastFinishedAtMs}
                     <div class="text-xs opacity-60 truncate">
                         Cache {formatRefreshTime(refreshStatus.lastFinishedAtMs)}
                         | odswiezone: {refreshStatus.refreshed}
                         | bez zmian: {refreshStatus.skipped}
+                        {#if refreshStatus.failed}
+                            | bledy: {refreshStatus.failed}
+                        {/if}
                     </div>
                 {/if}
                 {#if refreshStatus.lastError}
-                    <div class="text-xs text-error truncate">{refreshStatus.lastError}</div>
+                    <div class="text-xs text-warning truncate">
+                        {formatRefreshError(refreshStatus.lastError)}
+                    </div>
                 {/if}
             </div>
 

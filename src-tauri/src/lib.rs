@@ -7,10 +7,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const WATCHING_LIST_PAGE_LIMIT: usize = 100;
 const WATCHING_CACHE_TTL_MS: u64 = 30 * 60 * 1000;
+const WATCHING_CACHE_REQUEST_RETRIES: usize = 2;
+const WATCHING_CACHE_RETRY_DELAY_MS: u64 = 750;
 const SHINDEN_TITLE_PLACEHOLDER: &str =
     "https://shinden.pl/res/other/placeholders/title/100x100.jpg";
 
@@ -411,9 +413,11 @@ async fn refresh_watching_cache_inner(
                 })?;
             }
             Err(error) => {
+                let visible_error = watching_cache_item_error_message(&item.title);
+                let _ = command_error("watching_cache item", format!("{visible_error}: {error}"));
                 update_refresh_status(status, |status| {
                     status.failed += 1;
-                    status.last_error = Some(error.clone());
+                    status.last_error = Some(visible_error);
                 })?;
             }
         }
@@ -436,19 +440,13 @@ async fn scan_watching_item_availability(
     _exclude_ai_subtitles: bool,
 ) -> Result<WatchingAvailabilityCacheEntry, String> {
     let series_url = series_url(item.title_id);
-    let episodes = api
-        .get_episodes(&series_url)
-        .await
-        .map_err(|e| command_error("get_watching_anime episodes", e))?;
+    let episodes = get_watching_cache_episodes(api, &series_url).await?;
     let watched_count = watched_episode_count(item) as usize;
     let mut has_available_unwatched_episode = false;
     let mut subtitle_availability = HashMap::new();
 
     for episode in episodes.into_iter().skip(watched_count) {
-        let players = api
-            .get_players(&episode.link)
-            .await
-            .map_err(|e| command_error("get_watching_anime players", e))?;
+        let players = get_watching_cache_players(api, &episode.link).await?;
 
         if players.is_empty() {
             continue;
@@ -482,6 +480,69 @@ async fn scan_watching_item_availability(
         subtitle_availability,
         checked_at_ms: unix_timestamp_ms_u64(),
     })
+}
+
+async fn get_watching_cache_episodes(
+    api: &ShindenAPI,
+    series_url: &str,
+) -> Result<Vec<Episode>, String> {
+    let mut last_error = String::new();
+
+    for attempt in 0..=WATCHING_CACHE_REQUEST_RETRIES {
+        match api.get_episodes(series_url).await {
+            Ok(episodes) => return Ok(episodes),
+            Err(error) => {
+                last_error = error.to_string();
+                log_watching_cache_retry("episodes", series_url, attempt, &last_error);
+                wait_before_watching_cache_retry(attempt);
+            }
+        }
+    }
+
+    Err(format!(
+        "Nie udalo sie pobrac listy odcinkow: {last_error}"
+    ))
+}
+
+async fn get_watching_cache_players(
+    api: &ShindenAPI,
+    episode_url: &str,
+) -> Result<Vec<Player>, String> {
+    let mut last_error = String::new();
+
+    for attempt in 0..=WATCHING_CACHE_REQUEST_RETRIES {
+        match api.get_players(episode_url).await {
+            Ok(players) => return Ok(players),
+            Err(error) => {
+                last_error = error.to_string();
+                log_watching_cache_retry("players", episode_url, attempt, &last_error);
+                wait_before_watching_cache_retry(attempt);
+            }
+        }
+    }
+
+    Err(format!("Nie udalo sie sprawdzic odcinka: {last_error}"))
+}
+
+fn wait_before_watching_cache_retry(attempt: usize) {
+    if attempt < WATCHING_CACHE_REQUEST_RETRIES {
+        std::thread::sleep(Duration::from_millis(WATCHING_CACHE_RETRY_DELAY_MS));
+    }
+}
+
+fn log_watching_cache_retry(context: &str, url: &str, attempt: usize, error: &str) {
+    let _ = append_project_log(
+        "WARNING",
+        &format!(
+            "watching_cache {context} attempt {}/{} failed for {url}: {error}",
+            attempt + 1,
+            WATCHING_CACHE_REQUEST_RETRIES + 1
+        ),
+    );
+}
+
+fn watching_cache_item_error_message(title: &str) -> String {
+    format!("Nie udalo sie sprawdzic: {title}")
 }
 
 fn watching_list_url(user_id: &str, limit: usize, offset: usize) -> String {
@@ -1361,5 +1422,16 @@ mod tests {
             10_500,
             true
         ));
+    }
+
+    #[test]
+    fn watching_cache_item_error_message_hides_technical_request_details() {
+        let message = watching_cache_item_error_message("Potion Wagami wo Tasukeru");
+
+        assert_eq!(
+            message,
+            "Nie udalo sie sprawdzic: Potion Wagami wo Tasukeru"
+        );
+        assert!(!message.contains("https://"));
     }
 }
