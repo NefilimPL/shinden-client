@@ -39,6 +39,23 @@ struct WatchingListApiItem {
     description_en: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WatchingAnimeFilter {
+    only_available_unwatched: Option<bool>,
+    subtitle_language: Option<String>,
+}
+
+impl WatchingAnimeFilter {
+    fn only_available_unwatched(&self) -> bool {
+        self.only_available_unwatched.unwrap_or(false)
+    }
+
+    fn subtitle_language(&self) -> &str {
+        self.subtitle_language.as_deref().unwrap_or_default()
+    }
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -70,7 +87,11 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Anime
 }
 
 #[tauri::command]
-async fn get_watching_anime(state: tauri::State<'_, Api>) -> Result<Vec<Anime>, String> {
+async fn get_watching_anime(
+    state: tauri::State<'_, Api>,
+    filter: Option<WatchingAnimeFilter>,
+) -> Result<Vec<Anime>, String> {
+    let filter = filter.unwrap_or_default();
     let profile_html = state
         .0
         .get_html("https://shinden.pl/user")
@@ -88,7 +109,13 @@ async fn get_watching_anime(state: tauri::State<'_, Api>) -> Result<Vec<Anime>, 
         let loaded = page.items.len();
         let total = page.count;
 
-        anime.extend(page.items.into_iter().filter_map(map_watching_list_item));
+        for item in page.items {
+            if should_include_watching_item(&state.0, &item, &filter).await? {
+                if let Some(mapped) = map_watching_list_item(item) {
+                    anime.push(mapped);
+                }
+            }
+        }
 
         offset += loaded;
         if loaded == 0 || offset >= total {
@@ -207,10 +234,59 @@ async fn fetch_watching_list_page(
     Ok(payload.result)
 }
 
+async fn should_include_watching_item(
+    api: &ShindenAPI,
+    item: &WatchingListApiItem,
+    filter: &WatchingAnimeFilter,
+) -> Result<bool, String> {
+    if !filter.only_available_unwatched() {
+        return Ok(true);
+    }
+
+    if !has_unwatched_episodes(item) {
+        return Ok(false);
+    }
+
+    has_available_episode_with_subtitle_language(api, item, filter.subtitle_language()).await
+}
+
+async fn has_available_episode_with_subtitle_language(
+    api: &ShindenAPI,
+    item: &WatchingListApiItem,
+    subtitle_language: &str,
+) -> Result<bool, String> {
+    let series_url = series_url(item.title_id);
+    let episodes = api
+        .get_episodes(&series_url)
+        .await
+        .map_err(|e| command_error("get_watching_anime episodes", e))?;
+    let watched_count = watched_episode_count(item) as usize;
+
+    for episode in episodes.into_iter().skip(watched_count) {
+        let players = api
+            .get_players(&episode.link)
+            .await
+            .map_err(|e| command_error("get_watching_anime players", e))?;
+
+        if players
+            .iter()
+            .any(|player| subtitle_language_matches(&player.lang_subs, subtitle_language))
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 fn watching_list_url(user_id: &str, limit: usize, offset: usize) -> String {
     format!(
         "https://lista.shinden.pl/api/userlist/{user_id}/anime/in-progress?limit={limit}&offset={offset}"
     )
+}
+
+fn series_url(title_id: u64) -> String {
+    format!("https://shinden.pl/series/{title_id}")
 }
 
 fn extract_user_id_from_profile_html(html: &str) -> Option<String> {
@@ -241,7 +317,7 @@ fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
 
     Some(Anime {
         name,
-        url: format!("https://shinden.pl/series/{}", item.title_id),
+        url: series_url(item.title_id),
         image_url: item
             .cover_id
             .map(|cover_id| format!("https://cdn.shinden.eu/cdn1/images/genuine/{cover_id}.jpg"))
@@ -251,6 +327,77 @@ fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
         episodes: format_episode_progress(item.watched_episodes_cnt.as_deref(), item.episodes),
         description: item.description_pl.or(item.description_en).unwrap_or_default(),
     })
+}
+
+fn has_unwatched_episodes(item: &WatchingListApiItem) -> bool {
+    match item.episodes {
+        Some(total) => watched_episode_count(item) < total,
+        None => true,
+    }
+}
+
+fn watched_episode_count(item: &WatchingListApiItem) -> u32 {
+    item.watched_episodes_cnt
+        .as_deref()
+        .and_then(|watched| watched.trim().parse::<u32>().ok())
+        .unwrap_or_default()
+}
+
+fn subtitle_language_matches(player_lang_subs: &str, selected_language: &str) -> bool {
+    let selected_language = selected_language.trim();
+    if selected_language.is_empty() {
+        return true;
+    }
+
+    let selected_key = subtitle_language_key(selected_language);
+    if selected_key == "any" {
+        return true;
+    }
+
+    let player_key = subtitle_language_key(player_lang_subs);
+    player_key == selected_key
+        || player_lang_subs
+            .to_ascii_lowercase()
+            .contains(&selected_language.to_ascii_lowercase())
+}
+
+fn subtitle_language_key(language: &str) -> String {
+    let language = language.trim().to_ascii_lowercase();
+
+    if language == "any"
+        || language == "dowolny"
+        || language == "dowolne"
+        || language == "wszystkie"
+    {
+        return "any".to_string();
+    }
+
+    if language == "pl"
+        || language.contains("pol")
+        || language
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|token| token == "pl")
+    {
+        return "pl".to_string();
+    }
+
+    if language == "en"
+        || language == "eng"
+        || language.contains("ang")
+        || language.contains("english")
+    {
+        return "en".to_string();
+    }
+
+    if language == "jp"
+        || language == "ja"
+        || language.contains("jap")
+        || language.contains("japo")
+    {
+        return "jp".to_string();
+    }
+
+    language
 }
 
 fn format_rating(raw_rating: Option<&str>) -> String {
@@ -507,5 +654,34 @@ mod tests {
             url,
             "https://lista.shinden.pl/api/userlist/31875/anime/in-progress?limit=100&offset=200"
         );
+    }
+
+    fn watching_item(watched: Option<&str>, episodes: Option<u32>) -> WatchingListApiItem {
+        WatchingListApiItem {
+            title_id: 59922,
+            title: "Enen no Shouboutai: San no Shou".to_string(),
+            cover_id: None,
+            anime_type: None,
+            summary_rating_total: None,
+            episodes,
+            watched_episodes_cnt: watched.map(str::to_string),
+            description_pl: None,
+            description_en: None,
+        }
+    }
+
+    #[test]
+    fn has_unwatched_episodes_compares_watched_count_to_total() {
+        assert!(has_unwatched_episodes(&watching_item(Some("2"), Some(3))));
+        assert!(!has_unwatched_episodes(&watching_item(Some("3"), Some(3))));
+        assert!(has_unwatched_episodes(&watching_item(None, Some(1))));
+    }
+
+    #[test]
+    fn subtitle_language_matches_common_aliases() {
+        assert!(subtitle_language_matches("Polski", "PL"));
+        assert!(subtitle_language_matches("Napisy PL", "polski"));
+        assert!(subtitle_language_matches("English", "EN"));
+        assert!(!subtitle_language_matches("Angielski", "PL"));
     }
 }
