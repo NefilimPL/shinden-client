@@ -51,10 +51,14 @@
     let onlyAvailableUnwatched = $state(false);
     let subtitleLanguage = $state("PL");
     let checkSubtitleAvailabilityOnline = $state(false);
+    let excludeAiSubtitles = $state(false);
     let draftOnlyAvailableUnwatched = $state(false);
     let draftSubtitleLanguage = $state("PL");
     let draftCheckSubtitleAvailabilityOnline = $state(false);
+    let draftExcludeAiSubtitles = $state(false);
     let refreshStatus: WatchingCacheRefreshStatus = $state({ ...emptyRefreshStatus });
+    let lastSeenRefreshed = $state(0);
+    let silentReloadInProgress = $state(false);
 
     onMount(() => {
         loadSettings();
@@ -90,6 +94,7 @@
             checkSubtitleAvailabilityOnline = Boolean(
                 parsedSettings.checkSubtitleAvailabilityOnline,
             );
+            excludeAiSubtitles = Boolean(parsedSettings.excludeAiSubtitles);
         } catch (e) {
             log(LogLevel.WARNING, `Error loading watchlist settings: ${e}`);
         }
@@ -102,6 +107,7 @@
                 onlyAvailableUnwatched,
                 subtitleLanguage,
                 checkSubtitleAvailabilityOnline,
+                excludeAiSubtitles,
             }),
         );
     }
@@ -111,14 +117,26 @@
             onlyAvailableUnwatched,
             subtitleLanguage,
             checkSubtitleAvailabilityOnline,
+            excludeAiSubtitles,
         };
     }
 
     async function pollRefreshStatus() {
         try {
-            refreshStatus = await invoke<WatchingCacheRefreshStatus>(
+            const nextStatus = await invoke<WatchingCacheRefreshStatus>(
                 "get_watching_cache_refresh_status",
             );
+            const cacheHasNewData =
+                nextStatus.running && nextStatus.refreshed > lastSeenRefreshed;
+
+            refreshStatus = nextStatus;
+
+            if (!nextStatus.running) {
+                lastSeenRefreshed = nextStatus.refreshed;
+            } else if (cacheHasNewData && !silentReloadInProgress) {
+                lastSeenRefreshed = nextStatus.refreshed;
+                await loadWatchingAnime(false);
+            }
         } catch (e) {
             log(LogLevel.ERROR, `Error loading watchlist refresh status: ${e}`);
         }
@@ -133,9 +151,13 @@
             refreshStatus = {
                 ...refreshStatus,
                 running: true,
+                refreshed: 0,
+                skipped: 0,
+                failed: 0,
                 currentTitle: "",
                 lastError: null,
             };
+            lastSeenRefreshed = 0;
 
             const summary = await invoke<WatchingCacheRefreshSummary>(
                 "refresh_watching_anime_cache",
@@ -145,9 +167,10 @@
                 },
             );
             refreshStatus = summary.status;
+            lastSeenRefreshed = summary.status.refreshed;
 
             if (!summary.alreadyRunning) {
-                await loadWatchingAnime();
+                await loadWatchingAnime(false);
             }
         } catch (e) {
             refreshStatus = {
@@ -168,25 +191,44 @@
         return new Date(timestamp).toLocaleTimeString();
     }
 
-    async function loadWatchingAnime() {
+    async function loadWatchingAnime(showLoading = true) {
+        if (!showLoading && silentReloadInProgress) {
+            return;
+        }
+
         try {
-            globalStates.loadingState = LoadingState.LOADING;
-            log(LogLevel.INFO, "Loading watched anime list");
+            if (showLoading) {
+                globalStates.loadingState = LoadingState.LOADING;
+                log(LogLevel.INFO, "Loading watched anime list");
+            } else {
+                silentReloadInProgress = true;
+            }
 
             result = await invoke<Anime[]>("get_watching_anime", {
                 filter: {
                     onlyAvailableUnwatched,
                     subtitleLanguage,
                     checkSubtitleAvailabilityOnline,
+                    excludeAiSubtitles,
                 },
             });
 
-            globalStates.loadingState =
-                result.length > 0 ? LoadingState.OK : LoadingState.WARNING;
-            log(LogLevel.SUCCESS, "Loaded watched anime list");
+            if (showLoading || globalStates.loadingState !== LoadingState.LOADING) {
+                globalStates.loadingState =
+                    result.length > 0 ? LoadingState.OK : LoadingState.WARNING;
+            }
+            if (showLoading) {
+                log(LogLevel.SUCCESS, "Loaded watched anime list");
+            }
         } catch (e) {
-            globalStates.loadingState = LoadingState.ERROR;
+            if (showLoading) {
+                globalStates.loadingState = LoadingState.ERROR;
+            }
             log(LogLevel.ERROR, `Error loading watched anime list: ${e}`);
+        } finally {
+            if (!showLoading) {
+                silentReloadInProgress = false;
+            }
         }
     }
 
@@ -194,6 +236,7 @@
         draftOnlyAvailableUnwatched = onlyAvailableUnwatched;
         draftSubtitleLanguage = subtitleLanguage;
         draftCheckSubtitleAvailabilityOnline = checkSubtitleAvailabilityOnline;
+        draftExcludeAiSubtitles = excludeAiSubtitles;
         showSettings = true;
     }
 
@@ -205,6 +248,7 @@
         onlyAvailableUnwatched = draftOnlyAvailableUnwatched;
         subtitleLanguage = draftSubtitleLanguage;
         checkSubtitleAvailabilityOnline = draftCheckSubtitleAvailabilityOnline;
+        excludeAiSubtitles = draftExcludeAiSubtitles;
         saveSettings();
         showSettings = false;
         await loadWatchingAnime();
@@ -236,6 +280,9 @@
                     {result.length} pozycji
                     {#if onlyAvailableUnwatched && checkSubtitleAvailabilityOnline}
                         | napisy: {subtitleLanguage || "dowolny"}
+                        {#if excludeAiSubtitles}
+                            bez AI
+                        {/if}
                     {:else if onlyAvailableUnwatched}
                         | dostepne z cache
                     {/if}
@@ -251,7 +298,7 @@
                     <div class="text-xs opacity-60 truncate">
                         Cache {formatRefreshTime(refreshStatus.lastFinishedAtMs)}
                         | odswiezone: {refreshStatus.refreshed}
-                        | pominiete: {refreshStatus.skipped}
+                        | bez zmian: {refreshStatus.skipped}
                     </div>
                 {/if}
                 {#if refreshStatus.lastError}
@@ -378,6 +425,16 @@
                             <option value={option.value}>{option.label}</option>
                         {/each}
                     </select>
+                </label>
+
+                <label class="flex items-center justify-between gap-4">
+                    <span class="text-sm">Wyklucz napisy AI (iPL)</span>
+                    <input
+                        type="checkbox"
+                        class="toggle toggle-primary"
+                        bind:checked={draftExcludeAiSubtitles}
+                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
+                    />
                 </label>
             </div>
 

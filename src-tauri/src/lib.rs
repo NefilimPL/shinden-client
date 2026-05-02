@@ -48,6 +48,7 @@ struct WatchingAnimeFilter {
     only_available_unwatched: Option<bool>,
     subtitle_language: Option<String>,
     check_subtitle_availability_online: Option<bool>,
+    exclude_ai_subtitles: Option<bool>,
 }
 
 impl WatchingAnimeFilter {
@@ -61,6 +62,10 @@ impl WatchingAnimeFilter {
 
     fn check_subtitle_availability_online(&self) -> bool {
         self.check_subtitle_availability_online.unwrap_or(false)
+    }
+
+    fn exclude_ai_subtitles(&self) -> bool {
+        self.exclude_ai_subtitles.unwrap_or(false)
     }
 }
 
@@ -349,6 +354,7 @@ async fn refresh_watching_cache_inner(
     let items = fetch_all_watching_items(api).await?;
     let mut cache = load_watching_availability_cache();
     let subtitle_key = selected_subtitle_language_key(filter);
+    let subtitle_cache_key = selected_subtitle_cache_key(filter);
     let now_ms = unix_timestamp_ms_u64();
 
     update_refresh_status(status, |status| {
@@ -376,7 +382,7 @@ async fn refresh_watching_cache_inner(
                 cache_entry_satisfies_refresh(
                     entry,
                     item,
-                    subtitle_key.as_deref(),
+                    subtitle_cache_key.as_deref(),
                     now_ms,
                     force,
                 )
@@ -388,7 +394,15 @@ async fn refresh_watching_cache_inner(
             continue;
         }
 
-        match scan_watching_item_availability(api, item, subtitle_key.as_deref()).await {
+        match scan_watching_item_availability(
+            api,
+            item,
+            subtitle_key.as_deref(),
+            subtitle_cache_key.as_deref(),
+            filter.exclude_ai_subtitles(),
+        )
+        .await
+        {
             Ok(entry) => {
                 cache.entries.insert(cache_key, entry);
                 save_watching_availability_cache(&cache)?;
@@ -418,6 +432,8 @@ async fn scan_watching_item_availability(
     api: &ShindenAPI,
     item: &WatchingListApiItem,
     subtitle_key: Option<&str>,
+    subtitle_cache_key: Option<&str>,
+    _exclude_ai_subtitles: bool,
 ) -> Result<WatchingAvailabilityCacheEntry, String> {
     let series_url = series_url(item.title_id);
     let episodes = api
@@ -440,21 +456,22 @@ async fn scan_watching_item_availability(
 
         has_available_unwatched_episode = true;
 
-        if let Some(key) = subtitle_key {
-            if players
-                .iter()
-                .any(|player| subtitle_language_matches(&player.lang_subs, key))
-            {
-                subtitle_availability.insert(key.to_string(), true);
-                break;
+        if subtitle_key.is_some() {
+            for player in &players {
+                record_subtitle_language_availability(
+                    &mut subtitle_availability,
+                    &player.lang_subs,
+                );
             }
         } else {
             break;
         }
     }
 
-    if let Some(key) = subtitle_key {
-        subtitle_availability.entry(key.to_string()).or_insert(false);
+    if let Some(cache_key) = subtitle_cache_key {
+        subtitle_availability
+            .entry(cache_key.to_string())
+            .or_insert(false);
     }
 
     Ok(WatchingAvailabilityCacheEntry {
@@ -552,7 +569,7 @@ fn watching_cache_filter_matches(
         return false;
     }
 
-    selected_subtitle_language_key(filter)
+    selected_subtitle_cache_key(filter)
         .map(|key| {
             entry
                 .subtitle_availability
@@ -605,6 +622,31 @@ fn selected_subtitle_language_key(filter: &WatchingAnimeFilter) -> Option<String
     }
 }
 
+fn selected_subtitle_cache_key(filter: &WatchingAnimeFilter) -> Option<String> {
+    selected_subtitle_language_key(filter).map(|key| {
+        if filter.exclude_ai_subtitles() {
+            format!("{key}:human")
+        } else {
+            key
+        }
+    })
+}
+
+fn record_subtitle_language_availability(
+    subtitle_availability: &mut HashMap<String, bool>,
+    language: &str,
+) {
+    let key = subtitle_language_key(language);
+    if key.is_empty() || key == "any" {
+        return;
+    }
+
+    subtitle_availability.insert(key.clone(), true);
+    if !is_ai_subtitle_language(language, &key) {
+        subtitle_availability.insert(format!("{key}:human"), true);
+    }
+}
+
 fn watching_cache_key(title_id: u64) -> String {
     title_id.to_string()
 }
@@ -617,6 +659,14 @@ fn watched_episode_count(item: &WatchingListApiItem) -> u32 {
 }
 
 fn subtitle_language_matches(player_lang_subs: &str, selected_language: &str) -> bool {
+    subtitle_language_matches_with_options(player_lang_subs, selected_language, false)
+}
+
+fn subtitle_language_matches_with_options(
+    player_lang_subs: &str,
+    selected_language: &str,
+    exclude_ai_subtitles: bool,
+) -> bool {
     let selected_language = selected_language.trim();
     if selected_language.is_empty() {
         return true;
@@ -627,14 +677,33 @@ fn subtitle_language_matches(player_lang_subs: &str, selected_language: &str) ->
         return true;
     }
 
+    if exclude_ai_subtitles && is_ai_subtitle_language(player_lang_subs, &selected_key) {
+        return false;
+    }
+
     let player_key = subtitle_language_key(player_lang_subs);
     player_key == selected_key
-        || player_lang_subs
-            .to_ascii_lowercase()
-            .contains(&selected_language.to_ascii_lowercase())
 }
 
 fn subtitle_language_key(language: &str) -> String {
+    let language = language.trim().to_ascii_lowercase();
+
+    let direct_key = subtitle_language_key_without_ai(&language);
+    if matches!(direct_key.as_str(), "pl" | "en" | "jp" | "any") {
+        return direct_key;
+    }
+
+    if let Some(base_language) = language.strip_prefix('i') {
+        let base_key = subtitle_language_key_without_ai(base_language);
+        if matches!(base_key.as_str(), "pl" | "en" | "jp") {
+            return base_key;
+        }
+    }
+
+    direct_key
+}
+
+fn subtitle_language_key_without_ai(language: &str) -> String {
     let language = language.trim().to_ascii_lowercase();
 
     if language == "any"
@@ -671,6 +740,29 @@ fn subtitle_language_key(language: &str) -> String {
     }
 
     language
+}
+
+fn is_ai_subtitle_language(language: &str, selected_key: &str) -> bool {
+    ai_subtitle_base_key(language)
+        .as_deref()
+        .is_some_and(|base_key| base_key == selected_key)
+}
+
+fn ai_subtitle_base_key(language: &str) -> Option<String> {
+    let normalized: String = language
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect();
+    let base = normalized.strip_prefix('i')?;
+    let base_key = subtitle_language_key(base);
+
+    if matches!(base_key.as_str(), "pl" | "en" | "jp") {
+        Some(base_key)
+    } else {
+        None
+    }
 }
 
 fn format_rating(raw_rating: Option<&str>) -> String {
@@ -1054,8 +1146,42 @@ mod tests {
     fn subtitle_language_matches_common_aliases() {
         assert!(subtitle_language_matches("Polski", "PL"));
         assert!(subtitle_language_matches("Napisy PL", "polski"));
+        assert!(subtitle_language_matches("iPL", "PL"));
         assert!(subtitle_language_matches("English", "EN"));
         assert!(!subtitle_language_matches("Angielski", "PL"));
+    }
+
+    #[test]
+    fn subtitle_language_can_exclude_ai_translations() {
+        assert!(!subtitle_language_matches_with_options("iPL", "PL", true));
+        assert!(subtitle_language_matches_with_options("PL", "PL", true));
+    }
+
+    #[test]
+    fn subtitle_availability_records_ai_and_human_variants_separately() {
+        let mut availability = std::collections::HashMap::new();
+
+        record_subtitle_language_availability(&mut availability, "iPL");
+
+        assert_eq!(availability.get("pl"), Some(&true));
+        assert_eq!(availability.get("pl:human"), None);
+
+        record_subtitle_language_availability(&mut availability, "PL");
+
+        assert_eq!(availability.get("pl"), Some(&true));
+        assert_eq!(availability.get("pl:human"), Some(&true));
+    }
+
+    #[test]
+    fn ai_filtered_subtitles_use_separate_cache_key() {
+        let filter = WatchingAnimeFilter {
+            check_subtitle_availability_online: Some(true),
+            subtitle_language: Some("PL".to_string()),
+            exclude_ai_subtitles: Some(true),
+            ..Default::default()
+        };
+
+        assert_eq!(selected_subtitle_cache_key(&filter).as_deref(), Some("pl:human"));
     }
 
     #[test]
@@ -1130,6 +1256,7 @@ mod tests {
             only_available_unwatched: Some(true),
             check_subtitle_availability_online: Some(true),
             subtitle_language: Some("PL".to_string()),
+            ..Default::default()
         };
         let mut subtitle_availability = std::collections::HashMap::new();
         subtitle_availability.insert("pl".to_string(), true);
@@ -1152,6 +1279,7 @@ mod tests {
             only_available_unwatched: Some(true),
             check_subtitle_availability_online: Some(true),
             subtitle_language: Some("EN".to_string()),
+            ..Default::default()
         };
 
         assert!(!watching_cache_filter_matches(
@@ -1159,6 +1287,43 @@ mod tests {
             &english_filter,
             &cache
         ));
+    }
+
+    #[test]
+    fn cache_filter_distinguishes_ai_filtered_subtitle_availability() {
+        let item = watching_item(Some("2"), Some(3));
+        let filter = WatchingAnimeFilter {
+            only_available_unwatched: Some(true),
+            check_subtitle_availability_online: Some(true),
+            subtitle_language: Some("PL".to_string()),
+            exclude_ai_subtitles: Some(true),
+            ..Default::default()
+        };
+        let mut subtitle_availability = std::collections::HashMap::new();
+        subtitle_availability.insert("pl".to_string(), true);
+        let mut cache = WatchingAvailabilityCache::default();
+        cache.entries.insert(
+            "59922".to_string(),
+            WatchingAvailabilityCacheEntry {
+                title_id: 59922,
+                watched_episodes_cnt: 2,
+                total_episodes: Some(3),
+                has_available_unwatched_episode: true,
+                subtitle_availability,
+                checked_at_ms: 1000,
+            },
+        );
+
+        assert!(!watching_cache_filter_matches(&item, &filter, &cache));
+
+        cache
+            .entries
+            .get_mut("59922")
+            .expect("cache entry should exist")
+            .subtitle_availability
+            .insert("pl:human".to_string(), true);
+
+        assert!(watching_cache_filter_matches(&item, &filter, &cache));
     }
 
     #[test]
