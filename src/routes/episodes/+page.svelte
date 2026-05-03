@@ -2,20 +2,30 @@
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {onMount} from "svelte";
     import {invoke} from "@tauri-apps/api/core";
-    import type {Episode} from "$lib/types";
+    import type {EpisodeProgress} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
+    import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
 
-    let episodes: Episode[] = $state([]);
+    let episodes: EpisodeProgress[] = $state([]);
+    let watchedUpdateInProgress: number | null = $state(null);
 
     onMount(async ()=>{
        try {
            globalStates.loadingState = LoadingState.LOADING;
            log(LogLevel.INFO, "Loading episodes");
-           episodes = await invoke("get_episodes", {
-               url: params.seriesUrl
+
+           if (!params.titleId) {
+               params.titleId = titleIdFromSeriesUrl(params.seriesUrl);
+           }
+
+           episodes = await invoke<EpisodeProgress[]>("get_episodes_with_progress", {
+               url: params.seriesUrl,
+               titleId: params.titleId,
+               totalEpisodes: params.animeTotalEpisodes,
            });
+           params.episodeProgress = episodes;
            globalStates.loadingState = LoadingState.OK;
            log(LogLevel.SUCCESS, "Loaded episodes successfully");
        } catch (e) {
@@ -24,8 +34,35 @@
        }
     });
 
-    async function handleButton(url: string) {
-        params.playersUrl = url;
+    async function markEpisodeWatched(episode: EpisodeProgress) {
+        if (!params.titleId || !episode.episodeId || episode.watched) {
+            return;
+        }
+
+        try {
+            watchedUpdateInProgress = episode.episodeId;
+            await invoke("mark_episode_watched", {
+                titleId: params.titleId,
+                episodeId: episode.episodeId,
+                createdTime: formatShindenCreatedTime(new Date()),
+            });
+
+            episode.watched = true;
+            episode.viewCount = Math.max(episode.viewCount, 1);
+            episodes = [...episodes];
+            params.episodeProgress = episodes;
+            log(LogLevel.SUCCESS, `Oznaczono odcinek ${episode.episodeNo} jako obejrzany`);
+        } catch (e) {
+            log(LogLevel.ERROR, `Error marking episode watched: ${e}`);
+        } finally {
+            watchedUpdateInProgress = null;
+        }
+    }
+
+    async function handleButton(episode: EpisodeProgress, index: number) {
+        params.playersUrl = episode.link;
+        params.episodeProgress = episodes;
+        params.currentEpisodeIndex = index;
         await goto("/players");
     }
 </script>
@@ -52,7 +89,20 @@
                     <div class="list-col-grow flex-1">
                         <div>{episode.title === "" ? "Brak nazwy odcinka" : episode.title}</div>
                     </div>
-                    <button class="btn btn-square btn-ghost" aria-label="play" onclick={async() => { await handleButton(episode.link) }}>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <span class={`badge ${episode.watched ? "badge-success" : "badge-ghost"}`}>
+                            {episode.watched ? "Obejrzany" : "Nieobejrzany"}
+                        </span>
+
+                        <button
+                            class="btn btn-sm btn-ghost"
+                            disabled={episode.watched || !episode.episodeId || watchedUpdateInProgress === episode.episodeId}
+                            onclick={() => { void markEpisodeWatched(episode); }}
+                        >
+                            Oznacz
+                        </button>
+                    </div>
+                    <button class="btn btn-square btn-ghost" aria-label="play" onclick={async() => { await handleButton(episode, i) }}>
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                     </button>
                 </li>
