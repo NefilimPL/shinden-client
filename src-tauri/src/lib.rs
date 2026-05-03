@@ -32,8 +32,54 @@ struct WatchingListApiResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct TitleEpisodesApiResponse {
+    success: bool,
+    message: Option<String>,
+    result: TitleEpisodesApiResult,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TitleEpisodesApiResult {
+    count: u32,
+    items: Vec<TitleEpisodeApiItem>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TitleEpisodeApiItem {
+    episode_id: u64,
+    episode_no: u32,
+    is_filer: Option<u8>,
+    watched: Option<TitleEpisodeWatchedApiItem>,
+    title_pl: Option<TitleEpisodeTitleApiItem>,
+    title_en: Option<TitleEpisodeTitleApiItem>,
+    title_official: Option<TitleEpisodeTitleApiItem>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TitleEpisodeWatchedApiItem {
+    episode_id: u64,
+    view_cnt: u32,
+    created_time: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TitleEpisodeTitleApiItem {
+    lang: String,
+    episode_id: u64,
+    title: String,
+    title_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WatchingListApiItem {
     title_id: u64,
+    watch_status: Option<String>,
+    is_favourite: Option<u8>,
     title: String,
     cover_id: Option<u64>,
     anime_type: Option<String>,
@@ -109,6 +155,36 @@ struct WatchingCacheRefreshSummary {
     already_running: bool,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WatchingAnime {
+    title_id: u64,
+    name: String,
+    url: String,
+    image_url: String,
+    anime_type: String,
+    rating: String,
+    episodes: String,
+    description: String,
+    watch_status: String,
+    is_favourite: u8,
+    watched_episodes_count: u32,
+    total_episodes: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EpisodeProgress {
+    title: String,
+    link: String,
+    episode_id: Option<u64>,
+    episode_no: u32,
+    watched: bool,
+    view_count: u32,
+    total_episodes: Option<u32>,
+    is_true_final_episode: bool,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -143,7 +219,7 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Anime
 async fn get_watching_anime(
     state: tauri::State<'_, Api>,
     filter: Option<WatchingAnimeFilter>,
-) -> Result<Vec<Anime>, String> {
+) -> Result<Vec<WatchingAnime>, String> {
     let filter = filter.unwrap_or_default();
     let cache = load_watching_availability_cache();
     let items = fetch_all_watching_items(&state.0).await?;
@@ -151,8 +227,48 @@ async fn get_watching_anime(
     Ok(items
         .into_iter()
         .filter(|item| watching_cache_filter_matches(item, &filter, &cache))
-        .filter_map(map_watching_list_item)
+        .filter_map(map_watching_list_item_details)
         .collect())
+}
+
+#[tauri::command]
+async fn get_episodes_with_progress(
+    state: tauri::State<'_, Api>,
+    url: String,
+    title_id: Option<u64>,
+    total_episodes: Option<u32>,
+) -> Result<Vec<EpisodeProgress>, String> {
+    let playback_episodes = state
+        .0
+        .get_episodes(&url)
+        .await
+        .map_err(|e| command_error("get_episodes_with_progress playback", e))?;
+
+    let Some(title_id) = title_id.or_else(|| {
+        title_id_from_series_url(&url).and_then(|title_id| title_id.parse::<u64>().ok())
+    }) else {
+        return Ok(merge_episode_progress(playback_episodes, Vec::new(), total_episodes));
+    };
+
+    let progress_episodes = match fetch_current_user_id(&state.0, "get_episodes_with_progress").await
+    {
+        Ok(user_id) => fetch_title_episode_progress(&state.0, title_id, &user_id)
+            .await
+            .unwrap_or_else(|error| {
+                let _ = command_error("get_episodes_with_progress progress fallback", error);
+                Vec::new()
+            }),
+        Err(error) => {
+            let _ = command_error("get_episodes_with_progress user fallback", error);
+            Vec::new()
+        }
+    };
+
+    Ok(merge_episode_progress(
+        playback_episodes,
+        progress_episodes,
+        total_episodes,
+    ))
 }
 
 #[tauri::command]
@@ -213,12 +329,7 @@ async fn refresh_watching_anime_cache(
 }
 
 async fn fetch_all_watching_items(api: &ShindenAPI) -> Result<Vec<WatchingListApiItem>, String> {
-    let profile_html = api
-        .get_html("https://shinden.pl/user")
-        .await
-        .map_err(|e| command_error("get_watching_anime profile", e))?;
-    let user_id = extract_user_id_from_profile_html(&profile_html)
-        .ok_or_else(|| command_error("get_watching_anime profile", "User is not logged in"))?;
+    let user_id = fetch_current_user_id(api, "get_watching_anime").await?;
 
     let mut offset = 0;
     let mut items = Vec::new();
@@ -237,6 +348,17 @@ async fn fetch_all_watching_items(api: &ShindenAPI) -> Result<Vec<WatchingListAp
     }
 
     Ok(items)
+}
+
+async fn fetch_current_user_id(api: &ShindenAPI, context: &str) -> Result<String, String> {
+    let profile_context = format!("{context} profile");
+    let profile_html = api
+        .get_html("https://shinden.pl/user")
+        .await
+        .map_err(|e| command_error(&profile_context, e))?;
+
+    extract_user_id_from_profile_html(&profile_html)
+        .ok_or_else(|| command_error(&profile_context, "User is not logged in"))
 }
 
 #[tauri::command]
@@ -345,6 +467,38 @@ async fn fetch_watching_list_page(
     }
 
     Ok(payload.result)
+}
+
+async fn fetch_title_episode_progress(
+    api: &ShindenAPI,
+    title_id: u64,
+    user_id: &str,
+) -> Result<Vec<TitleEpisodeApiItem>, String> {
+    let response = api
+        .client
+        .get(title_episodes_url(title_id, user_id))
+        .header(ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|e| command_error("title_episodes request", e))?
+        .error_for_status()
+        .map_err(|e| command_error("title_episodes response", e))?;
+
+    let payload = response
+        .json::<TitleEpisodesApiResponse>()
+        .await
+        .map_err(|e| command_error("title_episodes json", e))?;
+
+    if !payload.success {
+        return Err(command_error(
+            "title_episodes json",
+            payload
+                .message
+                .unwrap_or_else(|| "List API returned success=false".to_string()),
+        ));
+    }
+
+    Ok(payload.result.items)
 }
 
 async fn refresh_watching_cache_inner(
@@ -555,6 +709,66 @@ fn series_url(title_id: u64) -> String {
     format!("https://shinden.pl/series/{title_id}")
 }
 
+fn title_id_from_series_url(url: &str) -> Option<String> {
+    let marker = "/series/";
+    let start = url.find(marker)? + marker.len();
+    let digits: String = url[start..]
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect();
+
+    if digits.is_empty() {
+        None
+    } else {
+        Some(digits)
+    }
+}
+
+fn title_episodes_url(title_id: u64, user_id: &str) -> String {
+    format!("https://lista.shinden.pl/api/title-episodes/{title_id}/{user_id}")
+}
+
+fn is_true_final_episode(episode_no: u32, total_episodes: Option<u32>) -> bool {
+    total_episodes
+        .map(|total| total > 0 && episode_no == total)
+        .unwrap_or(false)
+}
+
+fn merge_episode_progress(
+    playback_episodes: Vec<Episode>,
+    progress_episodes: Vec<TitleEpisodeApiItem>,
+    total_episodes: Option<u32>,
+) -> Vec<EpisodeProgress> {
+    let progress_by_number: HashMap<u32, TitleEpisodeApiItem> = progress_episodes
+        .into_iter()
+        .map(|episode| (episode.episode_no, episode))
+        .collect();
+
+    playback_episodes
+        .into_iter()
+        .enumerate()
+        .map(|(index, episode)| {
+            let fallback_episode_no = (index + 1).min(u32::MAX as usize) as u32;
+            let progress = progress_by_number.get(&fallback_episode_no);
+            let episode_no = progress
+                .map(|progress| progress.episode_no)
+                .unwrap_or(fallback_episode_no);
+            let watched = progress.and_then(|progress| progress.watched.as_ref());
+
+            EpisodeProgress {
+                title: episode.title,
+                link: episode.link,
+                episode_id: progress.map(|progress| progress.episode_id),
+                episode_no,
+                watched: watched.is_some(),
+                view_count: watched.map(|watched| watched.view_cnt).unwrap_or_default(),
+                total_episodes,
+                is_true_final_episode: is_true_final_episode(episode_no, total_episodes),
+            }
+        })
+        .collect()
+}
+
 fn extract_user_id_from_profile_html(html: &str) -> Option<String> {
     ["https://lista.shinden.pl/animelist/", "/animelist/"]
         .iter()
@@ -575,13 +789,53 @@ fn extract_ascii_digits_after(source: &str, marker: &str) -> Option<String> {
     }
 }
 
-fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
+fn shinden_watch_status_value(status: Option<&str>) -> Result<Option<&'static str>, String> {
+    let Some(status) = status else {
+        return Ok(None);
+    };
+
+    let normalized = status.trim().to_ascii_lowercase().replace('_', " ");
+    match normalized.as_str() {
+        "" | "no" | "none" | "null" => Ok(None),
+        "in progress" | "in-progress" | "inprogress" | "watching" | "ogladam" => {
+            Ok(Some("in progress"))
+        }
+        "completed" | "obejrzane" => Ok(Some("completed")),
+        "skip" | "pomijam" => Ok(Some("skip")),
+        "hold" | "wstrzymane" => Ok(Some("hold")),
+        "dropped" | "porzucone" => Ok(Some("dropped")),
+        "plan" | "planuje" => Ok(Some("plan")),
+        _ => Err(format!("Unsupported anime status: {status}")),
+    }
+}
+
+fn watch_status_list_slug(status: &str) -> &'static str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "in progress" | "in-progress" | "inprogress" => "in-progress",
+        "completed" => "completed",
+        "skip" => "skip",
+        "hold" => "hold",
+        "dropped" => "dropped",
+        "plan" => "plan",
+        _ => "in-progress",
+    }
+}
+
+fn map_watching_list_item_details(item: WatchingListApiItem) -> Option<WatchingAnime> {
     let name = item.title.trim().to_string();
     if name.is_empty() {
         return None;
     }
 
-    Some(Anime {
+    let watched_episodes_count = watched_episode_count(&item);
+    let watch_status = item
+        .watch_status
+        .as_deref()
+        .unwrap_or("in progress")
+        .to_string();
+
+    Some(WatchingAnime {
+        title_id: item.title_id,
         name,
         url: series_url(item.title_id),
         image_url: item
@@ -592,6 +846,22 @@ fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
         rating: format_rating(item.summary_rating_total.as_deref()),
         episodes: format_episode_progress(item.watched_episodes_cnt.as_deref(), item.episodes),
         description: item.description_pl.or(item.description_en).unwrap_or_default(),
+        watch_status,
+        is_favourite: item.is_favourite.unwrap_or_default(),
+        watched_episodes_count,
+        total_episodes: item.episodes,
+    })
+}
+
+fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
+    map_watching_list_item_details(item).map(|item| Anime {
+        name: item.name,
+        url: item.url,
+        image_url: item.image_url,
+        anime_type: item.anime_type,
+        rating: item.rating,
+        episodes: item.episodes,
+        description: item.description,
     })
 }
 
@@ -1056,6 +1326,7 @@ pub fn run() {
             test_connection,
             search,
             get_watching_anime,
+            get_episodes_with_progress,
             get_watching_cache_refresh_status,
             refresh_watching_anime_cache,
             login,
@@ -1145,9 +1416,54 @@ mod tests {
     }
 
     #[test]
+    fn shinden_watch_status_value_maps_ui_and_api_values() {
+        assert_eq!(
+            shinden_watch_status_value(Some("inProgress")).unwrap(),
+            Some("in progress")
+        );
+        assert_eq!(
+            shinden_watch_status_value(Some("in progress")).unwrap(),
+            Some("in progress")
+        );
+        assert_eq!(
+            shinden_watch_status_value(Some("completed")).unwrap(),
+            Some("completed")
+        );
+        assert_eq!(shinden_watch_status_value(Some("skip")).unwrap(), Some("skip"));
+        assert_eq!(shinden_watch_status_value(Some("hold")).unwrap(), Some("hold"));
+        assert_eq!(
+            shinden_watch_status_value(Some("dropped")).unwrap(),
+            Some("dropped")
+        );
+        assert_eq!(shinden_watch_status_value(Some("plan")).unwrap(), Some("plan"));
+        assert_eq!(shinden_watch_status_value(Some("no")).unwrap(), None);
+        assert_eq!(shinden_watch_status_value(None).unwrap(), None);
+    }
+
+    #[test]
+    fn shinden_watch_status_value_rejects_unknown_status() {
+        let result = shinden_watch_status_value(Some("watching-but-weird"));
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported anime status"));
+    }
+
+    #[test]
+    fn watch_status_list_slug_maps_shinden_values() {
+        assert_eq!(watch_status_list_slug("in progress"), "in-progress");
+        assert_eq!(watch_status_list_slug("completed"), "completed");
+        assert_eq!(watch_status_list_slug("skip"), "skip");
+        assert_eq!(watch_status_list_slug("hold"), "hold");
+        assert_eq!(watch_status_list_slug("dropped"), "dropped");
+        assert_eq!(watch_status_list_slug("plan"), "plan");
+    }
+
+    #[test]
     fn map_watching_list_item_builds_series_and_cover_urls() {
         let item = WatchingListApiItem {
             title_id: 59922,
+            watch_status: Some("in progress".to_string()),
+            is_favourite: Some(0),
             title: "Enen no Shouboutai: San no Shou".to_string(),
             cover_id: Some(123456),
             anime_type: Some("TV".to_string()),
@@ -1173,6 +1489,35 @@ mod tests {
     }
 
     #[test]
+    fn map_watching_list_item_details_preserves_status_progress_and_favourite() {
+        let item = WatchingListApiItem {
+            title_id: 59922,
+            watch_status: Some("in progress".to_string()),
+            is_favourite: Some(1),
+            title: "Enen no Shouboutai: San no Shou".to_string(),
+            cover_id: Some(123456),
+            anime_type: Some("TV".to_string()),
+            summary_rating_total: Some("7.9000".to_string()),
+            episodes: Some(12),
+            watched_episodes_cnt: Some("3".to_string()),
+            description_pl: Some("Opis".to_string()),
+            description_en: None,
+        };
+
+        let anime = map_watching_list_item_details(item).expect("item should map");
+
+        assert_eq!(anime.title_id, 59922);
+        assert_eq!(anime.watch_status, "in progress");
+        assert_eq!(anime.is_favourite, 1);
+        assert_eq!(anime.name, "Enen no Shouboutai: San no Shou");
+        assert_eq!(anime.url, "https://shinden.pl/series/59922");
+        assert_eq!(anime.rating, "7,90");
+        assert_eq!(anime.episodes, "3/12");
+        assert_eq!(anime.watched_episodes_count, 3);
+        assert_eq!(anime.total_episodes, Some(12));
+    }
+
+    #[test]
     fn watching_list_url_uses_in_progress_status() {
         let url = watching_list_url("31875", 100, 200);
 
@@ -1182,9 +1527,103 @@ mod tests {
         );
     }
 
+    #[test]
+    fn title_id_from_series_url_extracts_numeric_id() {
+        assert_eq!(
+            title_id_from_series_url("https://shinden.pl/series/59922-enen-no-shouboutai")
+                .as_deref(),
+            Some("59922")
+        );
+        assert_eq!(
+            title_id_from_series_url("https://shinden.pl/series/59922").as_deref(),
+            Some("59922")
+        );
+        assert_eq!(title_id_from_series_url("https://shinden.pl/titles/abc"), None);
+    }
+
+    #[test]
+    fn true_final_episode_requires_known_total_episode_count() {
+        assert!(is_true_final_episode(12, Some(12)));
+        assert!(!is_true_final_episode(10, Some(12)));
+        assert!(!is_true_final_episode(10, None));
+    }
+
+    #[test]
+    fn true_final_episode_ignores_last_loaded_episode_when_total_is_larger() {
+        let playback = vec![
+            Episode {
+                title: "Episode 9".to_string(),
+                link: "https://shinden.pl/episode/9".to_string(),
+            },
+            Episode {
+                title: "Episode 10".to_string(),
+                link: "https://shinden.pl/episode/10".to_string(),
+            },
+        ];
+        let progress = vec![TitleEpisodeApiItem {
+            episode_id: 100,
+            episode_no: 10,
+            is_filer: Some(0),
+            watched: None,
+            title_pl: None,
+            title_en: None,
+            title_official: None,
+        }];
+
+        let merged = merge_episode_progress(playback, progress, Some(12));
+
+        assert_eq!(merged[1].episode_no, 10);
+        assert!(!merged[1].is_true_final_episode);
+    }
+
+    #[test]
+    fn merge_episode_progress_marks_watched_rows_by_episode_number() {
+        let playback = vec![
+            Episode {
+                title: "Playback one".to_string(),
+                link: "https://shinden.pl/episode/1".to_string(),
+            },
+            Episode {
+                title: "Playback two".to_string(),
+                link: "https://shinden.pl/episode/2".to_string(),
+            },
+        ];
+        let progress = vec![TitleEpisodeApiItem {
+            episode_id: 168519,
+            episode_no: 2,
+            is_filer: Some(0),
+            watched: Some(TitleEpisodeWatchedApiItem {
+                episode_id: 168519,
+                view_cnt: 1,
+                created_time: Some("2022-07-28T00:33:32.000Z".to_string()),
+            }),
+            title_pl: Some(TitleEpisodeTitleApiItem {
+                lang: "pl".to_string(),
+                episode_id: 168519,
+                title: "Polski tytul".to_string(),
+                title_type: "national".to_string(),
+            }),
+            title_en: None,
+            title_official: None,
+        }];
+
+        let merged = merge_episode_progress(playback, progress, Some(2));
+
+        assert_eq!(merged[0].episode_no, 1);
+        assert_eq!(merged[0].episode_id, None);
+        assert!(!merged[0].watched);
+        assert_eq!(merged[1].episode_id, Some(168519));
+        assert_eq!(merged[1].title, "Playback two");
+        assert!(merged[1].watched);
+        assert_eq!(merged[1].view_count, 1);
+        assert!(merged[1].is_true_final_episode);
+    }
+
     fn watching_item(watched: Option<&str>, episodes: Option<u32>) -> WatchingListApiItem {
         WatchingListApiItem {
             title_id: 59922,
+            watch_status: Some("in progress".to_string()),
+            is_favourite: Some(0),
             title: "Enen no Shouboutai: San no Shou".to_string(),
             cover_id: None,
             anime_type: None,
