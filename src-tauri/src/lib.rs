@@ -162,8 +162,8 @@ struct WatchingCacheRefreshSummary {
 }
 
 #[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 struct WatchingAnime {
+    #[serde(rename = "titleId")]
     title_id: u64,
     name: String,
     url: String,
@@ -172,9 +172,13 @@ struct WatchingAnime {
     rating: String,
     episodes: String,
     description: String,
+    #[serde(rename = "watchStatus")]
     watch_status: String,
+    #[serde(rename = "isFavourite")]
     is_favourite: u8,
+    #[serde(rename = "watchedEpisodesCount")]
     watched_episodes_count: u32,
+    #[serde(rename = "totalEpisodes")]
     total_episodes: Option<u32>,
 }
 
