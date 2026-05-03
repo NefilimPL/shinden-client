@@ -187,6 +187,17 @@ struct WatchingAnime {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct SearchAnime {
+    #[serde(flatten)]
+    anime: Anime,
+    title_id: Option<u64>,
+    watch_status: String,
+    is_favourite: u8,
+    total_episodes: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct EpisodeProgress {
     title: String,
     link: String,
@@ -251,12 +262,16 @@ async fn test_connection(state: tauri::State<'_, Api>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Anime>, String> {
-    state
+async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<SearchAnime>, String> {
+    let results = state
         .0
         .search_anime(&query)
         .await
-        .map_err(|e| command_error("search", e))
+        .map_err(|e| command_error("search", e))?;
+
+    let watching_items = fetch_all_watching_items(&state.0).await.unwrap_or_default();
+
+    Ok(map_search_anime_results(results, watching_items))
 }
 
 #[tauri::command]
@@ -1021,6 +1036,41 @@ fn map_watching_list_item(item: WatchingListApiItem) -> Option<Anime> {
     })
 }
 
+fn map_search_anime_results(
+    results: Vec<Anime>,
+    watching_items: Vec<WatchingListApiItem>,
+) -> Vec<SearchAnime> {
+    let watching_by_title_id: HashMap<u64, WatchingListApiItem> = watching_items
+        .into_iter()
+        .map(|item| (item.title_id, item))
+        .collect();
+
+    results
+        .into_iter()
+        .map(|anime| map_search_anime_details(anime, &watching_by_title_id))
+        .collect()
+}
+
+fn map_search_anime_details(
+    anime: Anime,
+    watching_by_title_id: &HashMap<u64, WatchingListApiItem>,
+) -> SearchAnime {
+    let title_id = title_id_from_series_url(&anime.url).and_then(|value| value.parse::<u64>().ok());
+    let watching_item = title_id.and_then(|title_id| watching_by_title_id.get(&title_id));
+
+    SearchAnime {
+        anime,
+        title_id,
+        watch_status: watching_item
+            .and_then(|item| item.watch_status.clone())
+            .unwrap_or_else(|| "no".to_string()),
+        is_favourite: watching_item
+            .and_then(|item| item.is_favourite)
+            .unwrap_or_default(),
+        total_episodes: watching_item.and_then(|item| item.episodes),
+    }
+}
+
 fn has_unwatched_episodes(item: &WatchingListApiItem) -> bool {
     match item.episodes {
         Some(total) => watched_episode_count(item) < total,
@@ -1526,6 +1576,39 @@ mod tests {
         ))
     }
 
+    fn anime_fixture(url: &str) -> Anime {
+        Anime {
+            name: "Enen no Shouboutai: San no Shou".to_string(),
+            url: url.to_string(),
+            image_url: "https://shinden.pl/res/cover.jpg".to_string(),
+            anime_type: "TV".to_string(),
+            rating: "7,90".to_string(),
+            episodes: "12".to_string(),
+            description: String::new(),
+        }
+    }
+
+    fn watching_item_fixture(
+        title_id: u64,
+        watch_status: Option<&str>,
+        is_favourite: Option<u8>,
+        episodes: Option<u32>,
+    ) -> WatchingListApiItem {
+        WatchingListApiItem {
+            title_id,
+            watch_status: watch_status.map(str::to_string),
+            is_favourite,
+            title: "Enen no Shouboutai: San no Shou".to_string(),
+            cover_id: Some(123456),
+            anime_type: Some("TV".to_string()),
+            summary_rating_total: Some("7.9000".to_string()),
+            episodes,
+            watched_episodes_cnt: Some("3".to_string()),
+            description_pl: Some("Opis".to_string()),
+            description_en: None,
+        }
+    }
+
     #[test]
     fn find_project_root_from_detects_repository_markers() {
         let root = unique_temp_dir("root_markers");
@@ -1729,6 +1812,42 @@ mod tests {
         assert_eq!(anime.episodes, "3/12");
         assert_eq!(anime.watched_episodes_count, 3);
         assert_eq!(anime.total_episodes, Some(12));
+    }
+
+    #[test]
+    fn map_search_anime_results_defaults_to_no_status_and_extracts_title_id() {
+        let results = map_search_anime_results(
+            vec![anime_fixture(
+                "https://shinden.pl/series/59922-enen-no-shouboutai",
+            )],
+            Vec::new(),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title_id, Some(59922));
+        assert_eq!(results[0].watch_status, "no");
+        assert_eq!(results[0].is_favourite, 0);
+        assert_eq!(results[0].total_episodes, None);
+        assert_eq!(results[0].anime.name, "Enen no Shouboutai: San no Shou");
+    }
+
+    #[test]
+    fn map_search_anime_results_uses_matching_watching_status() {
+        let results = map_search_anime_results(
+            vec![anime_fixture("https://shinden.pl/titles/59922-enen-no-shouboutai")],
+            vec![watching_item_fixture(
+                59922,
+                Some("completed"),
+                Some(1),
+                Some(12),
+            )],
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title_id, Some(59922));
+        assert_eq!(results[0].watch_status, "completed");
+        assert_eq!(results[0].is_favourite, 1);
+        assert_eq!(results[0].total_episodes, Some(12));
     }
 
     #[test]

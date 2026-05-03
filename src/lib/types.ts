@@ -43,6 +43,13 @@ export type WatchingAnime = Anime & {
     totalEpisodes: number | null;
 };
 
+export type SearchAnime = Anime & {
+    titleId: number | null;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    totalEpisodes: number | null;
+};
+
 export type EpisodeProgress = Episode & {
     episodeId: number | null;
     episodeNo: number;

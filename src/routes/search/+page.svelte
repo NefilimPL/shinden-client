@@ -1,7 +1,7 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
     import {onMount} from "svelte";
-    import type {Anime, AnimeWatchStatus} from "$lib/types";
+    import type {AnimeWatchStatus, SearchAnime} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {goto} from "$app/navigation";
@@ -9,14 +9,14 @@
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     globalStates.loadingState = LoadingState.LOADING;
 
-    let result: Array<Anime> = $state([]);
+    let result: Array<SearchAnime> = $state([]);
     let statusUpdateInProgress: number | null = $state(null);
 
     onMount(async () => {
         try {
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
-            result = await invoke("search", {
+            result = await invoke<SearchAnime[]>("search", {
                 query: params.animeName
             });
 
@@ -40,13 +40,13 @@
         }
     })
 
-    function statusTitleId(anime: Anime) {
-        return titleIdFromSeriesUrl(anime.url);
+    function statusTitleId(anime: SearchAnime) {
+        return anime.titleId ?? titleIdFromSeriesUrl(anime.url);
     }
 
-    async function updateStatus(anime: Anime, status: AnimeWatchStatus) {
+    async function updateStatus(anime: SearchAnime, status: AnimeWatchStatus) {
         const titleId = statusTitleId(anime);
-        if (!titleId || status === "no") {
+        if (!titleId || anime.watchStatus === status) {
             return;
         }
 
@@ -55,8 +55,11 @@
             await invoke("update_anime_status", {
                 titleId,
                 status,
-                isFavourite: 0,
+                isFavourite: anime.isFavourite,
             });
+            anime.titleId = titleId;
+            anime.watchStatus = status;
+            result = [...result];
             log(LogLevel.SUCCESS, `Zmieniono status anime: ${anime.name}`);
         } catch (e) {
             log(LogLevel.ERROR, `Error updating anime status: ${e}`);
@@ -65,19 +68,17 @@
         }
     }
 
-    async function handleStatusChange(anime: Anime, event: Event) {
-        const select = event.currentTarget as HTMLSelectElement;
-        const status = select.value as AnimeWatchStatus;
+    async function handleStatusChange(anime: SearchAnime, event: Event) {
+        const status = (event.currentTarget as HTMLSelectElement).value as AnimeWatchStatus;
         await updateStatus(anime, status);
-        select.value = "no";
     }
 
-    async function handleButton(anime: Anime) {
+    async function handleButton(anime: SearchAnime) {
         params.seriesUrl = anime.url;
-        params.titleId = titleIdFromSeriesUrl(anime.url);
-        params.animeWatchStatus = "";
-        params.animeIsFavourite = 0;
-        params.animeTotalEpisodes = null;
+        params.titleId = statusTitleId(anime);
+        params.animeWatchStatus = anime.watchStatus;
+        params.animeIsFavourite = anime.isFavourite;
+        params.animeTotalEpisodes = anime.totalEpisodes;
         params.episodeProgress = [];
         params.currentEpisodeIndex = -1;
         await goto("/episodes");
@@ -112,12 +113,12 @@
                     {#if globalStates.user.name !== null && statusTitleId(anime)}
                         <select
                             class="select select-bordered select-sm w-36"
-                            value="no"
+                            value={anime.watchStatus}
                             disabled={statusUpdateInProgress === statusTitleId(anime)}
                             aria-label="status anime"
                             onchange={(event) => { void handleStatusChange(anime, event); }}
                         >
-                            <option value="no">Status</option>
+                            <option value="no">Brak statusu</option>
                             {#each animeStatusOptions as option}
                                 <option value={option.value}>{option.label}</option>
                             {/each}
