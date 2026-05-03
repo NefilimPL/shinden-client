@@ -1,4 +1,4 @@
-use reqwest::header::ACCEPT;
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use shinden_pl_api::client::ShindenAPI;
 use shinden_pl_api::models::{Anime, Episode, Player};
@@ -72,6 +72,12 @@ struct TitleEpisodeTitleApiItem {
     episode_id: u64,
     title: String,
     title_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShindenWriteResponse {
+    success: bool,
+    message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,6 +191,37 @@ struct EpisodeProgress {
     is_true_final_episode: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TitleStatusChangePayload {
+    input: Vec<TitleStatusChangeInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TitleStatusChangeInput {
+    title_id: u64,
+    watch_status: Option<&'static str>,
+    is_favourite: u8,
+    priority: u8,
+    recommend: u8,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchedEpisodesChangePayload {
+    title_id: u64,
+    episodes: Vec<WatchedEpisodeChangeInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchedEpisodeChangeInput {
+    episode_id: u64,
+    view_cnt: u32,
+    created_time: String,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -269,6 +306,40 @@ async fn get_episodes_with_progress(
         progress_episodes,
         total_episodes,
     ))
+}
+
+#[tauri::command]
+async fn update_anime_status(
+    state: tauri::State<'_, Api>,
+    title_id: u64,
+    status: Option<String>,
+    is_favourite: Option<u8>,
+) -> Result<(), String> {
+    let payload = build_title_status_payload(title_id, status.as_deref(), is_favourite)?;
+    post_shinden_json(
+        &state.0,
+        "https://lista.shinden.pl/api/title-status-change",
+        &payload,
+        "update_anime_status",
+    )
+    .await
+}
+
+#[tauri::command]
+async fn mark_episode_watched(
+    state: tauri::State<'_, Api>,
+    title_id: u64,
+    episode_id: u64,
+    created_time: String,
+) -> Result<(), String> {
+    let payload = build_watched_episode_payload(title_id, episode_id, created_time);
+    post_shinden_json(
+        &state.0,
+        "https://lista.shinden.pl/api/title-watched-episodes-change",
+        &payload,
+        "mark_episode_watched",
+    )
+    .await
 }
 
 #[tauri::command]
@@ -499,6 +570,44 @@ async fn fetch_title_episode_progress(
     }
 
     Ok(payload.result.items)
+}
+
+async fn post_shinden_json<T: Serialize>(
+    api: &ShindenAPI,
+    url: &str,
+    payload: &T,
+    context: &str,
+) -> Result<(), String> {
+    let request_context = format!("{context} request");
+    let response_context = format!("{context} response");
+    let json_context = format!("{context} json");
+    let response = api
+        .client
+        .post(url)
+        .header(ACCEPT, "application/json")
+        .header(CONTENT_TYPE, "application/json")
+        .json(payload)
+        .send()
+        .await
+        .map_err(|e| command_error(&request_context, e))?
+        .error_for_status()
+        .map_err(|e| command_error(&response_context, e))?;
+
+    let payload = response
+        .json::<ShindenWriteResponse>()
+        .await
+        .map_err(|e| command_error(&json_context, e))?;
+
+    if payload.success {
+        Ok(())
+    } else {
+        Err(command_error(
+            &json_context,
+            payload
+                .message
+                .unwrap_or_else(|| "Shinden returned success=false".to_string()),
+        ))
+    }
 }
 
 async fn refresh_watching_cache_inner(
@@ -818,6 +927,37 @@ fn watch_status_list_slug(status: &str) -> &'static str {
         "dropped" => "dropped",
         "plan" => "plan",
         _ => "in-progress",
+    }
+}
+
+fn build_title_status_payload(
+    title_id: u64,
+    status: Option<&str>,
+    is_favourite: Option<u8>,
+) -> Result<TitleStatusChangePayload, String> {
+    Ok(TitleStatusChangePayload {
+        input: vec![TitleStatusChangeInput {
+            title_id,
+            watch_status: shinden_watch_status_value(status)?,
+            is_favourite: is_favourite.unwrap_or_default(),
+            priority: 0,
+            recommend: 0,
+        }],
+    })
+}
+
+fn build_watched_episode_payload(
+    title_id: u64,
+    episode_id: u64,
+    created_time: String,
+) -> WatchedEpisodesChangePayload {
+    WatchedEpisodesChangePayload {
+        title_id,
+        episodes: vec![WatchedEpisodeChangeInput {
+            episode_id,
+            view_cnt: 1,
+            created_time,
+        }],
     }
 }
 
@@ -1327,6 +1467,8 @@ pub fn run() {
             search,
             get_watching_anime,
             get_episodes_with_progress,
+            update_anime_status,
+            mark_episode_watched,
             get_watching_cache_refresh_status,
             refresh_watching_anime_cache,
             login,
@@ -1456,6 +1598,44 @@ mod tests {
         assert_eq!(watch_status_list_slug("hold"), "hold");
         assert_eq!(watch_status_list_slug("dropped"), "dropped");
         assert_eq!(watch_status_list_slug("plan"), "plan");
+    }
+
+    #[test]
+    fn title_status_payload_serializes_shinden_status_change() {
+        let payload = build_title_status_payload(59922, Some("completed"), Some(1))
+            .expect("payload should build");
+        let value = serde_json::to_value(payload).expect("payload should serialize");
+
+        assert_eq!(value["input"][0]["titleId"], 59922);
+        assert_eq!(value["input"][0]["watchStatus"], "completed");
+        assert_eq!(value["input"][0]["isFavourite"], 1);
+        assert_eq!(value["input"][0]["priority"], 0);
+        assert_eq!(value["input"][0]["recommend"], 0);
+    }
+
+    #[test]
+    fn title_status_payload_serializes_no_status_as_null() {
+        let payload = build_title_status_payload(59922, Some("no"), None)
+            .expect("payload should build");
+        let value = serde_json::to_value(payload).expect("payload should serialize");
+
+        assert!(value["input"][0]["watchStatus"].is_null());
+        assert_eq!(value["input"][0]["isFavourite"], 0);
+    }
+
+    #[test]
+    fn watched_episode_payload_serializes_single_episode() {
+        let payload = build_watched_episode_payload(
+            59922,
+            168519,
+            "2026-05-03 00:45:10".to_string(),
+        );
+        let value = serde_json::to_value(payload).expect("payload should serialize");
+
+        assert_eq!(value["titleId"], 59922);
+        assert_eq!(value["episodes"][0]["episodeId"], 168519);
+        assert_eq!(value["episodes"][0]["viewCnt"], 1);
+        assert_eq!(value["episodes"][0]["createdTime"], "2026-05-03 00:45:10");
     }
 
     #[test]
