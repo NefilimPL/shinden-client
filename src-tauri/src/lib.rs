@@ -116,7 +116,7 @@ struct TitleStatusApiTitle {
     recommend: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct WatchingListApiItem {
     title_id: u64,
@@ -197,8 +197,8 @@ struct WatchingCacheRefreshSummary {
     already_running: bool,
 }
 
-struct WatchingCacheRefreshPlan<'a> {
-    items_to_scan: Vec<&'a WatchingListApiItem>,
+struct WatchingCacheRefreshPlan {
+    items_to_scan: Vec<WatchingListApiItem>,
     skipped: usize,
     processed: usize,
 }
@@ -1035,7 +1035,7 @@ async fn refresh_watching_cache_inner(
         let item_title = item.title.clone();
         let result = scan_watching_item_availability(
             api,
-            item,
+            &item,
             subtitle_key,
             subtitle_cache_key,
             exclude_ai_subtitles,
@@ -1080,13 +1080,13 @@ async fn refresh_watching_cache_inner(
     refresh_status_snapshot(status)
 }
 
-fn collect_watching_cache_refresh_plan<'a>(
-    items: &'a [WatchingListApiItem],
+fn collect_watching_cache_refresh_plan(
+    items: &[WatchingListApiItem],
     cache: &WatchingAvailabilityCache,
     subtitle_cache_key: Option<&str>,
     now_ms: u64,
     force: bool,
-) -> WatchingCacheRefreshPlan<'a> {
+) -> WatchingCacheRefreshPlan {
     let mut items_to_scan = Vec::new();
     let mut skipped = 0;
 
@@ -1104,7 +1104,7 @@ fn collect_watching_cache_refresh_plan<'a>(
             continue;
         }
 
-        items_to_scan.push(item);
+        items_to_scan.push(item.clone());
     }
 
     WatchingCacheRefreshPlan {
