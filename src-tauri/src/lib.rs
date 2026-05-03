@@ -1,4 +1,4 @@
-use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, ORIGIN, REFERER};
 use serde::{Deserialize, Serialize};
 use shinden_pl_api::client::ShindenAPI;
 use shinden_pl_api::models::{Anime, Episode, Player};
@@ -10,6 +10,14 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const WATCHING_LIST_PAGE_LIMIT: usize = 100;
+const WATCHING_LIST_STATUSES: [&str; 6] = [
+    "in progress",
+    "completed",
+    "skip",
+    "hold",
+    "dropped",
+    "plan",
+];
 const WATCHING_CACHE_TTL_MS: u64 = 30 * 60 * 1000;
 const WATCHING_CACHE_REQUEST_RETRIES: usize = 2;
 const WATCHING_CACHE_RETRY_DELAY_MS: u64 = 750;
@@ -81,6 +89,29 @@ struct TitleEpisodeTitleApiItem {
 struct ShindenWriteResponse {
     success: bool,
     message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TitleStatusApiResponse {
+    success: bool,
+    message: Option<String>,
+    result: TitleStatusApiResult,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TitleStatusApiResult {
+    title: Option<TitleStatusApiTitle>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TitleStatusApiTitle {
+    watch_status: Option<String>,
+    is_favourite: Option<u8>,
+    priority: Option<i32>,
+    recommend: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -221,8 +252,8 @@ struct TitleStatusChangeInput {
     title_id: u64,
     watch_status: Option<&'static str>,
     is_favourite: u8,
-    priority: u8,
-    recommend: u8,
+    priority: i32,
+    recommend: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -269,7 +300,7 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Searc
         .await
         .map_err(|e| command_error("search", e))?;
 
-    let watching_items = fetch_all_watching_items(&state.0).await.unwrap_or_default();
+    let watching_items = fetch_all_userlist_items(&state.0).await.unwrap_or_default();
 
     Ok(map_search_anime_results(results, watching_items))
 }
@@ -337,14 +368,69 @@ async fn update_anime_status(
     status: Option<String>,
     is_favourite: Option<u8>,
 ) -> Result<(), String> {
-    let payload = build_title_status_payload(title_id, status.as_deref(), is_favourite)?;
+    let user_id = fetch_current_user_id(&state.0, "update_anime_status").await?;
+    let current_status = fetch_title_status(&state.0, title_id, &user_id)
+        .await
+        .unwrap_or_default();
+    let payload = build_title_status_payload_with_details(
+        title_id,
+        status.as_deref(),
+        is_favourite.or_else(|| {
+            current_status
+                .as_ref()
+                .and_then(|status| status.is_favourite)
+        }),
+        current_status
+            .as_ref()
+            .and_then(|status| status.priority)
+            .unwrap_or_default(),
+        current_status
+            .as_ref()
+            .and_then(|status| status.recommend)
+            .unwrap_or_default(),
+    )?;
+
     post_shinden_json(
         &state.0,
         "https://lista.shinden.pl/api/title-status-change",
         &payload,
         "update_anime_status",
     )
+    .await?;
+
+    match verify_title_status_change_with_user(
+        &state.0,
+        title_id,
+        &user_id,
+        status.as_deref(),
+        "update_anime_status",
+    )
     .await
+    {
+        Ok(()) => Ok(()),
+        Err(verify_error) => {
+            let _ = append_project_log(
+                "WARNING",
+                &format!("update_anime_status fallback after failed list verification: {verify_error}"),
+            );
+            post_legacy_anime_status(
+                &state.0,
+                title_id,
+                &user_id,
+                status.as_deref(),
+                &payload.input[0],
+            )
+            .await?;
+            verify_title_status_change_with_user(
+                &state.0,
+                title_id,
+                &user_id,
+                status.as_deref(),
+                "update_anime_status legacy verify",
+            )
+            .await
+        }
+    }
 }
 
 #[tauri::command]
@@ -440,12 +526,32 @@ async fn refresh_watching_anime_cache(
 
 async fn fetch_all_watching_items(api: &ShindenAPI) -> Result<Vec<WatchingListApiItem>, String> {
     let user_id = fetch_current_user_id(api, "get_watching_anime").await?;
+    fetch_all_watching_items_for_status(api, &user_id, "in progress").await
+}
 
+async fn fetch_all_userlist_items(api: &ShindenAPI) -> Result<Vec<WatchingListApiItem>, String> {
+    let user_id = fetch_current_user_id(api, "search").await?;
+    let mut items = Vec::new();
+
+    for status in WATCHING_LIST_STATUSES {
+        items.extend(fetch_all_watching_items_for_status(api, &user_id, status).await?);
+    }
+
+    Ok(items)
+}
+
+async fn fetch_all_watching_items_for_status(
+    api: &ShindenAPI,
+    user_id: &str,
+    status: &str,
+) -> Result<Vec<WatchingListApiItem>, String> {
     let mut offset = 0;
     let mut items = Vec::new();
 
     loop {
-        let page = fetch_watching_list_page(api, &user_id, WATCHING_LIST_PAGE_LIMIT, offset).await?;
+        let page =
+            fetch_watching_list_status_page(api, user_id, status, WATCHING_LIST_PAGE_LIMIT, offset)
+                .await?;
         let loaded = page.items.len();
         let total = page.count;
 
@@ -469,6 +575,16 @@ async fn fetch_current_user_id(api: &ShindenAPI, context: &str) -> Result<String
 
     extract_user_id_from_profile_html(&profile_html)
         .ok_or_else(|| command_error(&profile_context, "User is not logged in"))
+}
+
+async fn fetch_shinden_basic_auth(api: &ShindenAPI) -> Result<String, String> {
+    let profile_html = api
+        .get_html("https://shinden.pl/user")
+        .await
+        .map_err(|e| command_error("legacy auth profile", e))?;
+
+    extract_shinden_basic_auth(&profile_html)
+        .ok_or_else(|| command_error("legacy auth profile", "Could not find Shinden auth token"))
 }
 
 #[tauri::command]
@@ -548,13 +664,14 @@ async fn get_cda_video(_state: tauri::State<'_, Api>, url: String) -> Result<Str
     .map_err(|e| command_error("get_cda_video task", e))?
 }
 
-async fn fetch_watching_list_page(
+async fn fetch_watching_list_status_page(
     api: &ShindenAPI,
     user_id: &str,
+    status: &str,
     limit: usize,
     offset: usize,
 ) -> Result<WatchingListApiResult, String> {
-    let url = watching_list_url(user_id, limit, offset);
+    let url = watching_list_status_url(user_id, status, limit, offset);
     let response = api
         .client
         .get(&url)
@@ -577,6 +694,38 @@ async fn fetch_watching_list_page(
     }
 
     Ok(payload.result)
+}
+
+async fn fetch_title_status(
+    api: &ShindenAPI,
+    title_id: u64,
+    user_id: &str,
+) -> Result<Option<TitleStatusApiTitle>, String> {
+    let response = api
+        .client
+        .get(title_status_url(title_id, user_id))
+        .header(ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|e| command_error("title_status request", e))?
+        .error_for_status()
+        .map_err(|e| command_error("title_status response", e))?;
+
+    let payload = response
+        .json::<TitleStatusApiResponse>()
+        .await
+        .map_err(|e| command_error("title_status json", e))?;
+
+    if !payload.success {
+        return Err(command_error(
+            "title_status json",
+            payload
+                .message
+                .unwrap_or_else(|| "List API returned success=false".to_string()),
+        ));
+    }
+
+    Ok(payload.result.title)
 }
 
 async fn fetch_title_episode_progress(
@@ -625,6 +774,8 @@ async fn post_shinden_json<T: Serialize>(
         .post(url)
         .header(ACCEPT, "application/json")
         .header(CONTENT_TYPE, "application/json")
+        .header(ORIGIN, "https://lista.shinden.pl")
+        .header(REFERER, "https://lista.shinden.pl/")
         .json(payload)
         .send()
         .await
@@ -646,6 +797,196 @@ async fn post_shinden_json<T: Serialize>(
                 .message
                 .unwrap_or_else(|| "Shinden returned success=false".to_string()),
         ))
+    }
+}
+
+async fn post_legacy_anime_status(
+    api: &ShindenAPI,
+    title_id: u64,
+    user_id: &str,
+    status: Option<&str>,
+    input: &TitleStatusChangeInput,
+) -> Result<(), String> {
+    let legacy_statuses = shinden_legacy_watch_status_values(status)?;
+    if legacy_statuses.is_empty() {
+        return post_legacy_anime_status_delete(api, title_id, user_id).await;
+    }
+
+    let basic_auth = fetch_shinden_basic_auth(api).await?;
+    let priority = input.priority.to_string();
+    let recommend = input.recommend.to_string();
+    let url = legacy_userlist_series_url(user_id, title_id);
+
+    let mut last_error = None;
+
+    for legacy_status in legacy_statuses {
+        let response = api
+            .client
+            .post(&url)
+            .header(ACCEPT, "application/json")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header(ORIGIN, "https://shinden.pl")
+            .header(REFERER, series_url(title_id))
+            .form(&[
+                ("status", legacy_status),
+                ("priority", priority.as_str()),
+                ("recommend", recommend.as_str()),
+                ("auth", basic_auth.as_str()),
+            ])
+            .send()
+            .await
+            .map_err(|e| command_error("legacy_update_anime_status request", e))?
+            .error_for_status()
+            .map_err(|e| command_error("legacy_update_anime_status response", e))?;
+
+        if let Err(error) = validate_legacy_write_response(response.text().await.map_err(|e| {
+            command_error("legacy_update_anime_status text", e)
+        })?) {
+            last_error = Some(error);
+            continue;
+        }
+
+        match verify_title_status_change_with_user(
+            api,
+            title_id,
+            user_id,
+            status,
+            "legacy_update_anime_status",
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        command_error(
+            "legacy_update_anime_status",
+            "Shinden did not confirm legacy status change",
+        )
+    }))
+}
+
+async fn post_legacy_anime_status_delete(
+    api: &ShindenAPI,
+    title_id: u64,
+    user_id: &str,
+) -> Result<(), String> {
+    let basic_auth = fetch_shinden_basic_auth(api).await?;
+    let url = legacy_userlist_series_url(user_id, title_id);
+    let response = api
+        .client
+        .post(&url)
+        .header(ACCEPT, "application/json")
+        .header(CONTENT_TYPE, "application/json")
+        .header("X-HTTP-Method-Override", "DELETE")
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header(ORIGIN, "https://shinden.pl")
+        .header(REFERER, series_url(title_id))
+        .json(&serde_json::json!({ "auth": basic_auth }))
+        .send()
+        .await
+        .map_err(|e| command_error("legacy_delete_anime_status request", e))?
+        .error_for_status()
+        .map_err(|e| command_error("legacy_delete_anime_status response", e))?;
+
+    validate_legacy_write_response(response.text().await.map_err(|e| {
+        command_error("legacy_delete_anime_status text", e)
+    })?)
+}
+
+fn validate_legacy_write_response(response_text: String) -> Result<(), String> {
+    let trimmed = response_text.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return Ok(());
+    };
+
+    if value
+        .get("success")
+        .and_then(|success| success.as_bool())
+        .is_some_and(|success| !success)
+    {
+        return Err(command_error(
+            "legacy_update_anime_status json",
+            value
+                .get("message")
+                .and_then(|message| message.as_str())
+                .unwrap_or("Shinden returned success=false"),
+        ));
+    }
+
+    if let Some(error) = value
+        .get("error")
+        .or_else(|| value.get("err"))
+        .and_then(|error| error.as_str())
+    {
+        if !error.trim().is_empty() {
+            return Err(command_error("legacy_update_anime_status json", error));
+        }
+    }
+
+    Ok(())
+}
+
+async fn verify_title_status_change_with_user(
+    api: &ShindenAPI,
+    title_id: u64,
+    user_id: &str,
+    status: Option<&str>,
+    context: &str,
+) -> Result<(), String> {
+    let expected_status = shinden_watch_status_value(status)?;
+    let statuses = match expected_status {
+        Some(status) => vec![status],
+        None => WATCHING_LIST_STATUSES.to_vec(),
+    };
+
+    let mut found_status = None;
+
+    for status in statuses {
+        let items = fetch_all_watching_items_for_status(api, &user_id, status).await?;
+
+        if let Some(item) = items.into_iter().find(|item| item.title_id == title_id) {
+            found_status = Some(item.watch_status.unwrap_or_else(|| status.to_string()));
+            break;
+        }
+    }
+
+    match expected_status {
+        Some(expected_status) => {
+            let Some(found_status) = found_status else {
+                return Err(command_error(
+                    context,
+                    format!("Shinden did not confirm status change for title {title_id}"),
+                ));
+            };
+
+            if title_status_matches(Some(&found_status), Some(expected_status))? {
+                Ok(())
+            } else {
+                Err(command_error(
+                    context,
+                    format!(
+                        "Shinden saved status {found_status}, expected {expected_status} for title {title_id}"
+                    ),
+                ))
+            }
+        }
+        None => {
+            if found_status.is_none() {
+                Ok(())
+            } else {
+                Err(command_error(
+                    context,
+                    format!("Shinden did not remove title {title_id} from the user list"),
+                ))
+            }
+        }
     }
 }
 
@@ -847,10 +1188,20 @@ fn watching_cache_item_error_message(title: &str) -> String {
     format!("Nie udalo sie sprawdzic: {title}")
 }
 
-fn watching_list_url(user_id: &str, limit: usize, offset: usize) -> String {
+fn watching_list_status_url(user_id: &str, status: &str, limit: usize, offset: usize) -> String {
+    let status = watch_status_list_slug(status);
+
     format!(
-        "https://lista.shinden.pl/api/userlist/{user_id}/anime/in-progress?limit={limit}&offset={offset}"
+        "https://lista.shinden.pl/api/userlist/{user_id}/anime/{status}?limit={limit}&offset={offset}"
     )
+}
+
+fn title_status_url(title_id: u64, user_id: &str) -> String {
+    format!("https://lista.shinden.pl/api/title-status/{title_id}/{user_id}")
+}
+
+fn legacy_userlist_series_url(user_id: &str, title_id: u64) -> String {
+    format!("https://shinden.pl/api/userlist/{user_id}/series/{title_id}")
 }
 
 fn series_url(title_id: u64) -> String {
@@ -914,6 +1265,24 @@ fn extract_user_id_from_profile_html(html: &str) -> Option<String> {
         .find_map(|marker| extract_ascii_digits_after(html, marker))
 }
 
+fn extract_shinden_basic_auth(html: &str) -> Option<String> {
+    [
+        "_Storage.basic = \"",
+        "_Storage.basic=\"",
+        "_Storage.basic = '",
+        "_Storage.basic='",
+        "\"basic\":\"",
+        "'basic':'",
+        "basic: \"",
+        "basic:\"",
+        "basic: '",
+        "basic:'",
+    ]
+    .iter()
+    .find_map(|marker| extract_until_quote_after(html, marker))
+    .filter(|token| !token.trim().is_empty())
+}
+
 fn extract_ascii_digits_after(source: &str, marker: &str) -> Option<String> {
     let start = source.find(marker)? + marker.len();
     let digits: String = source[start..]
@@ -925,6 +1294,18 @@ fn extract_ascii_digits_after(source: &str, marker: &str) -> Option<String> {
         None
     } else {
         Some(digits)
+    }
+}
+
+fn extract_until_quote_after(source: &str, marker: &str) -> Option<String> {
+    let start = source.find(marker)? + marker.len();
+    let quote = marker.chars().last()?;
+    let value = source[start..].split(quote).next()?.trim();
+
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
     }
 }
 
@@ -948,6 +1329,23 @@ fn shinden_watch_status_value(status: Option<&str>) -> Result<Option<&'static st
     }
 }
 
+fn shinden_legacy_watch_status_values(status: Option<&str>) -> Result<Vec<&'static str>, String> {
+    Ok(match shinden_watch_status_value(status)? {
+        Some("in progress") => vec!["in progress", "in-progress", "watching"],
+        Some("completed") => vec!["completed", "watched"],
+        Some("plan") => vec!["plan", "planned", "to-watch"],
+        Some("dropped") => vec!["dropped"],
+        Some("hold") => vec!["hold", "on-hold"],
+        Some("skip") => vec!["skip", "skipped"],
+        Some(status) => vec![status],
+        None => Vec::new(),
+    })
+}
+
+fn title_status_matches(found: Option<&str>, expected: Option<&str>) -> Result<bool, String> {
+    Ok(shinden_watch_status_value(found)? == shinden_watch_status_value(expected)?)
+}
+
 fn watch_status_list_slug(status: &str) -> &'static str {
     match status.trim().to_ascii_lowercase().as_str() {
         "in progress" | "in-progress" | "inprogress" => "in-progress",
@@ -965,13 +1363,23 @@ fn build_title_status_payload(
     status: Option<&str>,
     is_favourite: Option<u8>,
 ) -> Result<TitleStatusChangePayload, String> {
+    build_title_status_payload_with_details(title_id, status, is_favourite, 0, 0)
+}
+
+fn build_title_status_payload_with_details(
+    title_id: u64,
+    status: Option<&str>,
+    is_favourite: Option<u8>,
+    priority: i32,
+    recommend: i32,
+) -> Result<TitleStatusChangePayload, String> {
     Ok(TitleStatusChangePayload {
         input: vec![TitleStatusChangeInput {
             title_id,
             watch_status: shinden_watch_status_value(status)?,
             is_favourite: is_favourite.unwrap_or_default(),
-            priority: 0,
-            recommend: 0,
+            priority,
+            recommend,
         }],
     })
 }
@@ -1658,6 +2066,13 @@ mod tests {
     }
 
     #[test]
+    fn extract_shinden_basic_auth_reads_storage_token() {
+        let html = r#"<script>_Storage.basic = "token-123";</script>"#;
+
+        assert_eq!(extract_shinden_basic_auth(html).as_deref(), Some("token-123"));
+    }
+
+    #[test]
     fn shinden_watch_status_value_maps_ui_and_api_values() {
         assert_eq!(
             shinden_watch_status_value(Some("inProgress")).unwrap(),
@@ -1691,6 +2106,29 @@ mod tests {
     }
 
     #[test]
+    fn title_status_matches_normalizes_status_values() {
+        assert!(title_status_matches(Some("in progress"), Some("inProgress")).unwrap());
+        assert!(title_status_matches(Some("completed"), Some("completed")).unwrap());
+        assert!(title_status_matches(None, Some("no")).unwrap());
+        assert!(!title_status_matches(Some("completed"), Some("in progress")).unwrap());
+    }
+
+    #[test]
+    fn shinden_legacy_watch_status_values_include_old_aliases() {
+        assert_eq!(
+            shinden_legacy_watch_status_values(Some("in progress")).unwrap(),
+            vec!["in progress", "in-progress", "watching"]
+        );
+        assert_eq!(
+            shinden_legacy_watch_status_values(Some("completed")).unwrap(),
+            vec!["completed", "watched"]
+        );
+        assert!(shinden_legacy_watch_status_values(Some("no"))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn watch_status_list_slug_maps_shinden_values() {
         assert_eq!(watch_status_list_slug("in progress"), "in-progress");
         assert_eq!(watch_status_list_slug("completed"), "completed");
@@ -1721,6 +2159,19 @@ mod tests {
 
         assert!(value["input"][0]["watchStatus"].is_null());
         assert_eq!(value["input"][0]["isFavourite"], 0);
+    }
+
+    #[test]
+    fn title_status_payload_preserves_priority_and_recommendation() {
+        let payload =
+            build_title_status_payload_with_details(59922, Some("plan"), Some(1), -10, 25)
+                .expect("payload should build");
+        let value = serde_json::to_value(payload).expect("payload should serialize");
+
+        assert_eq!(value["input"][0]["watchStatus"], "plan");
+        assert_eq!(value["input"][0]["isFavourite"], 1);
+        assert_eq!(value["input"][0]["priority"], -10);
+        assert_eq!(value["input"][0]["recommend"], 25);
     }
 
     #[test]
@@ -1851,12 +2302,38 @@ mod tests {
     }
 
     #[test]
-    fn watching_list_url_uses_in_progress_status() {
-        let url = watching_list_url("31875", 100, 200);
+    fn watching_list_status_url_uses_in_progress_status() {
+        let url = watching_list_status_url("31875", "in progress", 100, 200);
 
         assert_eq!(
             url,
             "https://lista.shinden.pl/api/userlist/31875/anime/in-progress?limit=100&offset=200"
+        );
+    }
+
+    #[test]
+    fn watching_list_status_url_uses_selected_status_slug() {
+        let url = watching_list_status_url("31875", "completed", 100, 200);
+
+        assert_eq!(
+            url,
+            "https://lista.shinden.pl/api/userlist/31875/anime/completed?limit=100&offset=200"
+        );
+    }
+
+    #[test]
+    fn title_status_url_uses_title_and_user_ids() {
+        assert_eq!(
+            title_status_url(59922, "31875"),
+            "https://lista.shinden.pl/api/title-status/59922/31875"
+        );
+    }
+
+    #[test]
+    fn legacy_userlist_series_url_uses_shinden_api_path() {
+        assert_eq!(
+            legacy_userlist_series_url("31875", 59922),
+            "https://shinden.pl/api/userlist/31875/series/59922"
         );
     }
 

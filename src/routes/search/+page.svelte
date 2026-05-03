@@ -62,15 +62,17 @@
             result = [...result];
             log(LogLevel.SUCCESS, `Zmieniono status anime: ${anime.name}`);
         } catch (e) {
-            log(LogLevel.ERROR, `Error updating anime status: ${e}`);
+            log(LogLevel.ERROR, `Nie udało się zapisać statusu anime w Shinden: ${e}`);
         } finally {
             statusUpdateInProgress = null;
         }
     }
 
     async function handleStatusChange(anime: SearchAnime, event: Event) {
-        const status = (event.currentTarget as HTMLSelectElement).value as AnimeWatchStatus;
+        const select = event.currentTarget as HTMLSelectElement;
+        const status = select.value as AnimeWatchStatus;
         await updateStatus(anime, status);
+        select.value = anime.watchStatus;
     }
 
     async function handleButton(anime: SearchAnime) {
