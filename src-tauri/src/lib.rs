@@ -52,8 +52,11 @@ struct TitleEpisodeApiItem {
     episode_no: u32,
     is_filer: Option<u8>,
     watched: Option<TitleEpisodeWatchedApiItem>,
+    #[serde(rename = "titlePL")]
     title_pl: Option<TitleEpisodeTitleApiItem>,
+    #[serde(rename = "titleEN")]
     title_en: Option<TitleEpisodeTitleApiItem>,
+    #[serde(rename = "titleOfficial")]
     title_official: Option<TitleEpisodeTitleApiItem>,
 }
 

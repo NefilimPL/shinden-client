@@ -223,7 +223,7 @@
                         {primaryProgressLabel()}
                     </button>
 
-                    {#if nextEpisode()}
+                    {#if nextEpisode() && !currentEpisode()?.isTrueFinalEpisode}
                         <button
                             class="btn btn-ghost btn-sm w-full sm:w-auto"
                             disabled={progressWriteInProgress}
