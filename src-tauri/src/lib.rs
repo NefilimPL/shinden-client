@@ -1,3 +1,4 @@
+use futures_util::stream::{self, StreamExt};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, ORIGIN, REFERER};
 use serde::{Deserialize, Serialize};
 use shinden_pl_api::client::ShindenAPI;
@@ -19,6 +20,7 @@ const WATCHING_LIST_STATUSES: [&str; 6] = [
     "plan",
 ];
 const WATCHING_CACHE_TTL_MS: u64 = 30 * 60 * 1000;
+const WATCHING_CACHE_REFRESH_CONCURRENCY: usize = 4;
 const WATCHING_CACHE_REQUEST_RETRIES: usize = 2;
 const WATCHING_CACHE_RETRY_DELAY_MS: u64 = 750;
 const SHINDEN_TITLE_PLACEHOLDER: &str =
@@ -193,6 +195,12 @@ struct WatchingCacheRefreshStatus {
 struct WatchingCacheRefreshSummary {
     status: WatchingCacheRefreshStatus,
     already_running: bool,
+}
+
+struct WatchingCacheRefreshPlan<'a> {
+    items_to_scan: Vec<&'a WatchingListApiItem>,
+    skipped: usize,
+    processed: usize,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -1006,48 +1014,45 @@ async fn refresh_watching_cache_inner(
         status.total = items.len();
     })?;
 
-    for (index, item) in items.iter().enumerate() {
-        update_refresh_status(status, |status| {
-            status.current = index + 1;
-            status.current_title = item.title.clone();
-        })?;
+    let plan = collect_watching_cache_refresh_plan(
+        &items,
+        &cache,
+        subtitle_cache_key.as_deref(),
+        now_ms,
+        force,
+    );
 
-        if !has_unwatched_episodes(item) {
-            update_refresh_status(status, |status| {
-                status.skipped += 1;
-            })?;
-            continue;
-        }
+    update_refresh_status(status, |status| {
+        status.current = plan.processed;
+        status.skipped = plan.skipped;
+    })?;
 
+    let subtitle_key = subtitle_key.as_deref();
+    let subtitle_cache_key = subtitle_cache_key.as_deref();
+    let exclude_ai_subtitles = filter.exclude_ai_subtitles();
+    let mut scan_results = stream::iter(plan.items_to_scan.into_iter().map(|item| async move {
         let cache_key = watching_cache_key(item.title_id);
-        if cache
-            .entries
-            .get(&cache_key)
-            .is_some_and(|entry| {
-                cache_entry_satisfies_refresh(
-                    entry,
-                    item,
-                    subtitle_cache_key.as_deref(),
-                    now_ms,
-                    force,
-                )
-            })
-        {
-            update_refresh_status(status, |status| {
-                status.skipped += 1;
-            })?;
-            continue;
-        }
-
-        match scan_watching_item_availability(
+        let item_title = item.title.clone();
+        let result = scan_watching_item_availability(
             api,
             item,
-            subtitle_key.as_deref(),
-            subtitle_cache_key.as_deref(),
-            filter.exclude_ai_subtitles(),
+            subtitle_key,
+            subtitle_cache_key,
+            exclude_ai_subtitles,
         )
-        .await
-        {
+        .await;
+
+        (cache_key, item_title, result)
+    }))
+    .buffer_unordered(WATCHING_CACHE_REFRESH_CONCURRENCY);
+
+    while let Some((cache_key, item_title, scan_result)) = scan_results.next().await {
+        update_refresh_status(status, |status| {
+            status.current += 1;
+            status.current_title = item_title.clone();
+        })?;
+
+        match scan_result {
             Ok(entry) => {
                 cache.entries.insert(cache_key, entry);
                 save_watching_availability_cache(&cache)?;
@@ -1056,7 +1061,7 @@ async fn refresh_watching_cache_inner(
                 })?;
             }
             Err(error) => {
-                let visible_error = watching_cache_item_error_message(&item.title);
+                let visible_error = watching_cache_item_error_message(&item_title);
                 let _ = command_error("watching_cache item", format!("{visible_error}: {error}"));
                 update_refresh_status(status, |status| {
                     status.failed += 1;
@@ -1073,6 +1078,40 @@ async fn refresh_watching_cache_inner(
     })?;
 
     refresh_status_snapshot(status)
+}
+
+fn collect_watching_cache_refresh_plan<'a>(
+    items: &'a [WatchingListApiItem],
+    cache: &WatchingAvailabilityCache,
+    subtitle_cache_key: Option<&str>,
+    now_ms: u64,
+    force: bool,
+) -> WatchingCacheRefreshPlan<'a> {
+    let mut items_to_scan = Vec::new();
+    let mut skipped = 0;
+
+    for item in items {
+        if !has_unwatched_episodes(item) {
+            skipped += 1;
+            continue;
+        }
+
+        let cache_key = watching_cache_key(item.title_id);
+        if cache.entries.get(&cache_key).is_some_and(|entry| {
+            cache_entry_satisfies_refresh(entry, item, subtitle_cache_key, now_ms, force)
+        }) {
+            skipped += 1;
+            continue;
+        }
+
+        items_to_scan.push(item);
+    }
+
+    WatchingCacheRefreshPlan {
+        items_to_scan,
+        skipped,
+        processed: skipped,
+    }
 }
 
 async fn scan_watching_item_availability(
@@ -2448,6 +2487,68 @@ mod tests {
             description_pl: None,
             description_en: None,
         }
+    }
+
+    fn watching_item_with_title(
+        title_id: u64,
+        watched: Option<&str>,
+        episodes: Option<u32>,
+    ) -> WatchingListApiItem {
+        let mut item = watching_item(watched, episodes);
+        item.title_id = title_id;
+        item.title = format!("Anime {title_id}");
+        item
+    }
+
+    #[test]
+    fn watching_cache_refresh_scans_four_titles_concurrently() {
+        assert_eq!(WATCHING_CACHE_REFRESH_CONCURRENCY, 4);
+    }
+
+    #[test]
+    fn watching_cache_refresh_plan_queues_only_uncached_unwatched_items() {
+        let uncached = watching_item_with_title(59922, Some("2"), Some(3));
+        let completed = watching_item_with_title(59923, Some("3"), Some(3));
+        let cached = watching_item_with_title(59924, Some("2"), Some(3));
+        let stale = watching_item_with_title(59925, Some("2"), Some(3));
+        let items = vec![uncached, completed, cached, stale];
+        let mut cache = WatchingAvailabilityCache::default();
+        let mut subtitle_availability = std::collections::HashMap::new();
+        subtitle_availability.insert("pl".to_string(), true);
+
+        cache.entries.insert(
+            "59924".to_string(),
+            WatchingAvailabilityCacheEntry {
+                title_id: 59924,
+                watched_episodes_cnt: 2,
+                total_episodes: Some(3),
+                has_available_unwatched_episode: true,
+                subtitle_availability: subtitle_availability.clone(),
+                checked_at_ms: 10_000,
+            },
+        );
+        cache.entries.insert(
+            "59925".to_string(),
+            WatchingAvailabilityCacheEntry {
+                title_id: 59925,
+                watched_episodes_cnt: 2,
+                total_episodes: Some(3),
+                has_available_unwatched_episode: true,
+                subtitle_availability,
+                checked_at_ms: 0,
+            },
+        );
+
+        let plan = collect_watching_cache_refresh_plan(&items, &cache, Some("pl"), 10_500, false);
+        let queued_title_ids: Vec<u64> = plan
+            .items_to_scan
+            .iter()
+            .map(|item| item.title_id)
+            .collect();
+
+        assert_eq!(plan.skipped, 2);
+        assert_eq!(plan.processed, 2);
+        assert_eq!(queued_title_ids, vec![59922, 59925]);
     }
 
     #[test]

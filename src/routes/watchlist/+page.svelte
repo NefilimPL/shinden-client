@@ -7,9 +7,12 @@
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
+    import {
+        watchlistSettingsStorageKey,
+        type WatchingCacheRefreshStatus,
+        type WatchingCacheRefreshSummary,
+    } from "$lib/watchlistRefresh";
 
-    const settingsStorageKey = "shinden-watchlist-settings";
-    const watchlistAutoRefreshMs = 15 * 60 * 1000;
     const refreshStatusPollMs = 2000;
     const subtitleLanguageOptions = [
         { value: "PL", label: "Polski" },
@@ -17,23 +20,6 @@
         { value: "JP", label: "Japonski" },
         { value: "", label: "Dowolny" },
     ];
-
-    type WatchingCacheRefreshStatus = {
-        running: boolean;
-        current: number;
-        total: number;
-        refreshed: number;
-        skipped: number;
-        failed: number;
-        currentTitle: string;
-        lastFinishedAtMs: number | null;
-        lastError: string | null;
-    };
-
-    type WatchingCacheRefreshSummary = {
-        status: WatchingCacheRefreshStatus;
-        alreadyRunning: boolean;
-    };
 
     const emptyRefreshStatus: WatchingCacheRefreshStatus = {
         running: false,
@@ -60,28 +46,25 @@
     let draftExcludeAiSubtitles = $state(false);
     let refreshStatus: WatchingCacheRefreshStatus = $state({ ...emptyRefreshStatus });
     let lastSeenRefreshed = $state(0);
+    let refreshStatusInitialized = $state(false);
     let silentReloadInProgress = $state(false);
 
     onMount(() => {
         loadSettings();
-        void loadWatchingAnime().then(() => refreshWatchingCache(false));
+        void loadWatchingAnime();
         void pollRefreshStatus();
 
-        const autoRefreshTimer = window.setInterval(() => {
-            void refreshWatchingCache(false);
-        }, watchlistAutoRefreshMs);
         const statusTimer = window.setInterval(() => {
             void pollRefreshStatus();
         }, refreshStatusPollMs);
 
         return () => {
-            window.clearInterval(autoRefreshTimer);
             window.clearInterval(statusTimer);
         };
     });
 
     function loadSettings() {
-        const storedSettings = localStorage.getItem(settingsStorageKey);
+        const storedSettings = localStorage.getItem(watchlistSettingsStorageKey);
         if (!storedSettings) {
             return;
         }
@@ -104,7 +87,7 @@
 
     function saveSettings() {
         localStorage.setItem(
-            settingsStorageKey,
+            watchlistSettingsStorageKey,
             JSON.stringify({
                 onlyAvailableUnwatched,
                 subtitleLanguage,
@@ -128,16 +111,20 @@
             const nextStatus = await invoke<WatchingCacheRefreshStatus>(
                 "get_watching_cache_refresh_status",
             );
-            const cacheHasNewData =
-                nextStatus.running && nextStatus.refreshed > lastSeenRefreshed;
 
             refreshStatus = nextStatus;
-
-            if (!nextStatus.running) {
+            if (!refreshStatusInitialized) {
+                refreshStatusInitialized = true;
                 lastSeenRefreshed = nextStatus.refreshed;
-            } else if (cacheHasNewData && !silentReloadInProgress) {
+                return;
+            }
+
+            const cacheHasNewData = nextStatus.refreshed > lastSeenRefreshed;
+            if (cacheHasNewData && !silentReloadInProgress) {
                 lastSeenRefreshed = nextStatus.refreshed;
                 await loadWatchingAnime(false);
+            } else if (!nextStatus.running) {
+                lastSeenRefreshed = nextStatus.refreshed;
             }
         } catch (e) {
             log(LogLevel.ERROR, `Error loading watchlist refresh status: ${e}`);
@@ -262,7 +249,6 @@
         saveSettings();
         showSettings = false;
         await loadWatchingAnime();
-        void refreshWatchingCache(false);
     }
 
     async function updateStatus(anime: WatchingAnime, status: AnimeWatchStatus) {
@@ -478,6 +464,12 @@
                         disabled={!draftOnlyAvailableUnwatched}
                     />
                 </label>
+
+                {#if draftOnlyAvailableUnwatched && draftCheckSubtitleAvailabilityOnline}
+                    <p class="text-xs opacity-60">
+                        Filtrowanie po jezyku wydluza odswiezanie, bo aplikacja sprawdza playery dla nieobejrzanych odcinkow.
+                    </p>
+                {/if}
 
                 <label class="form-control w-full">
                     <span class="label-text mb-2">Jezyk napisow</span>
