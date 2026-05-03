@@ -25,3 +25,36 @@ export type Player = {
     lang_subs: string,
     online_id: string,
 }
+
+export type AnimeWatchStatus =
+    | "in progress"
+    | "completed"
+    | "skip"
+    | "hold"
+    | "dropped"
+    | "plan"
+    | "no";
+
+export type WatchingAnime = Anime & {
+    titleId: number;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    watchedEpisodesCount: number;
+    totalEpisodes: number | null;
+};
+
+export type SearchAnime = Anime & {
+    titleId: number | null;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    totalEpisodes: number | null;
+};
+
+export type EpisodeProgress = Episode & {
+    episodeId: number | null;
+    episodeNo: number;
+    watched: boolean;
+    viewCount: number;
+    totalEpisodes: number | null;
+    isTrueFinalEpisode: boolean;
+};

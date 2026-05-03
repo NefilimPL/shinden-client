@@ -2,10 +2,11 @@
     import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
-    import type { Anime } from "$lib/types";
+    import type { AnimeWatchStatus, WatchingAnime } from "$lib/types";
     import { globalStates, LoadingState, params } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import Empty from "$lib/Empty.svelte";
+    import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
 
     const settingsStorageKey = "shinden-watchlist-settings";
     const watchlistAutoRefreshMs = 15 * 60 * 1000;
@@ -46,8 +47,9 @@
         lastError: null,
     };
 
-    let result: Anime[] = $state([]);
+    let result: WatchingAnime[] = $state([]);
     let showSettings = $state(false);
+    let statusUpdateInProgress: number | null = $state(null);
     let onlyAvailableUnwatched = $state(false);
     let subtitleLanguage = $state("PL");
     let checkSubtitleAvailabilityOnline = $state(false);
@@ -212,7 +214,7 @@
                 silentReloadInProgress = true;
             }
 
-            result = await invoke<Anime[]>("get_watching_anime", {
+            result = await invoke<WatchingAnime[]>("get_watching_anime", {
                 filter: {
                     onlyAvailableUnwatched,
                     subtitleLanguage,
@@ -263,8 +265,44 @@
         void refreshWatchingCache(false);
     }
 
-    async function handleButton(url: string) {
-        params.seriesUrl = url;
+    async function updateStatus(anime: WatchingAnime, status: AnimeWatchStatus) {
+        if (anime.watchStatus === status) {
+            return;
+        }
+
+        try {
+            statusUpdateInProgress = anime.titleId;
+            await invoke("update_anime_status", {
+                titleId: anime.titleId,
+                status,
+                isFavourite: anime.isFavourite,
+            });
+
+            anime.watchStatus = status;
+            result = status === "in progress"
+                ? [...result]
+                : result.filter((item) => item.titleId !== anime.titleId);
+            log(LogLevel.SUCCESS, `Zmieniono status anime: ${anime.name}`);
+        } catch (e) {
+            log(LogLevel.ERROR, `Error updating anime status: ${e}`);
+        } finally {
+            statusUpdateInProgress = null;
+        }
+    }
+
+    async function handleStatusChange(anime: WatchingAnime, event: Event) {
+        const status = (event.currentTarget as HTMLSelectElement).value as AnimeWatchStatus;
+        await updateStatus(anime, status);
+    }
+
+    async function handleButton(anime: WatchingAnime) {
+        params.seriesUrl = anime.url;
+        params.titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
+        params.animeWatchStatus = anime.watchStatus;
+        params.animeIsFavourite = anime.isFavourite;
+        params.animeTotalEpisodes = anime.totalEpisodes;
+        params.episodeProgress = [];
+        params.currentEpisodeIndex = -1;
         await goto("/episodes");
     }
 </script>
@@ -379,11 +417,22 @@
                             {/if}
                         </div>
                     </div>
+                    <select
+                        class="select select-bordered select-sm w-36"
+                        value={anime.watchStatus}
+                        disabled={statusUpdateInProgress === anime.titleId}
+                        aria-label="status anime"
+                        onchange={(event) => { void handleStatusChange(anime, event); }}
+                    >
+                        {#each animeStatusOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
                     <button
                         data-debug-url={anime.url}
                         class="btn btn-square btn-ghost"
                         aria-label="episodes"
-                        onclick={async () => { await handleButton(anime.url); }}
+                        onclick={async () => { await handleButton(anime); }}
                     >
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                             <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
