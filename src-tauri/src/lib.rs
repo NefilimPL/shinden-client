@@ -339,12 +339,29 @@ async fn mark_episode_watched(
     episode_id: u64,
     created_time: String,
 ) -> Result<(), String> {
-    let payload = build_watched_episode_payload(title_id, episode_id, created_time);
+    let payload = build_watched_episode_payload(title_id, episode_id, created_time, 1);
     post_shinden_json(
         &state.0,
         "https://lista.shinden.pl/api/title-watched-episodes-change",
         &payload,
         "mark_episode_watched",
+    )
+    .await
+}
+
+#[tauri::command]
+async fn mark_episode_unwatched(
+    state: tauri::State<'_, Api>,
+    title_id: u64,
+    episode_id: u64,
+    created_time: String,
+) -> Result<(), String> {
+    let payload = build_watched_episode_payload(title_id, episode_id, created_time, 0);
+    post_shinden_json(
+        &state.0,
+        "https://lista.shinden.pl/api/title-watched-episodes-change",
+        &payload,
+        "mark_episode_unwatched",
     )
     .await
 }
@@ -826,18 +843,9 @@ fn series_url(title_id: u64) -> String {
 }
 
 fn title_id_from_series_url(url: &str) -> Option<String> {
-    let marker = "/series/";
-    let start = url.find(marker)? + marker.len();
-    let digits: String = url[start..]
-        .chars()
-        .take_while(|character| character.is_ascii_digit())
-        .collect();
-
-    if digits.is_empty() {
-        None
-    } else {
-        Some(digits)
-    }
+    ["/series/", "/titles/"]
+        .iter()
+        .find_map(|marker| extract_ascii_digits_after(url, marker))
 }
 
 fn title_episodes_url(title_id: u64, user_id: &str) -> String {
@@ -957,12 +965,13 @@ fn build_watched_episode_payload(
     title_id: u64,
     episode_id: u64,
     created_time: String,
+    view_count: u32,
 ) -> WatchedEpisodesChangePayload {
     WatchedEpisodesChangePayload {
         title_id,
         episodes: vec![WatchedEpisodeChangeInput {
             episode_id,
-            view_cnt: 1,
+            view_cnt: view_count,
             created_time,
         }],
     }
@@ -1476,6 +1485,7 @@ pub fn run() {
             get_episodes_with_progress,
             update_anime_status,
             mark_episode_watched,
+            mark_episode_unwatched,
             get_watching_cache_refresh_status,
             refresh_watching_anime_cache,
             login,
@@ -1636,12 +1646,29 @@ mod tests {
             59922,
             168519,
             "2026-05-03 00:45:10".to_string(),
+            1,
         );
         let value = serde_json::to_value(payload).expect("payload should serialize");
 
         assert_eq!(value["titleId"], 59922);
         assert_eq!(value["episodes"][0]["episodeId"], 168519);
         assert_eq!(value["episodes"][0]["viewCnt"], 1);
+        assert_eq!(value["episodes"][0]["createdTime"], "2026-05-03 00:45:10");
+    }
+
+    #[test]
+    fn watched_episode_payload_serializes_unwatched_episode() {
+        let payload = build_watched_episode_payload(
+            59922,
+            168519,
+            "2026-05-03 00:45:10".to_string(),
+            0,
+        );
+        let value = serde_json::to_value(payload).expect("payload should serialize");
+
+        assert_eq!(value["titleId"], 59922);
+        assert_eq!(value["episodes"][0]["episodeId"], 168519);
+        assert_eq!(value["episodes"][0]["viewCnt"], 0);
         assert_eq!(value["episodes"][0]["createdTime"], "2026-05-03 00:45:10");
     }
 
@@ -1723,6 +1750,11 @@ mod tests {
         );
         assert_eq!(
             title_id_from_series_url("https://shinden.pl/series/59922").as_deref(),
+            Some("59922")
+        );
+        assert_eq!(
+            title_id_from_series_url("https://shinden.pl/titles/59922-enen-no-shouboutai")
+                .as_deref(),
             Some("59922")
         );
         assert_eq!(title_id_from_series_url("https://shinden.pl/titles/abc"), None);

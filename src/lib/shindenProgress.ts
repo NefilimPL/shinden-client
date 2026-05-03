@@ -14,7 +14,7 @@ export function animeStatusLabel(status: string) {
 }
 
 export function titleIdFromSeriesUrl(url: string): number | null {
-    const match = url.match(/\/series\/(\d+)/);
+    const match = url.match(/\/(?:series|titles)\/(\d+)/);
     if (!match) {
         return null;
     }
