@@ -1758,7 +1758,9 @@ fn parse_discovery_links(html: &str, include_source_label: bool) -> Vec<Discover
         let close = open_end + 1 + close_relative;
         let anchor_body = &html[open_end + 1..close];
         let mut name = compact_text(anchor_body);
-        let mut image_url = extract_first_image_src(anchor_body).unwrap_or_default();
+        let mut image_url = extract_first_image_url(anchor_body)
+            .or_else(|| extract_background_image_url(open_tag))
+            .unwrap_or_default();
 
         if name.is_empty() {
             name = extract_first_image_alt(anchor_body).unwrap_or_default();
@@ -1769,7 +1771,7 @@ fn parse_discovery_links(html: &str, include_source_label: bool) -> Vec<Discover
         }
 
         if image_url.is_empty() {
-            image_url = extract_nearby_image_src(html, anchor_start, close)
+            image_url = extract_nearby_image_url(html, anchor_start, close)
                 .unwrap_or_else(|| SHINDEN_TITLE_PLACEHOLDER.to_string());
         }
 
@@ -1890,15 +1892,39 @@ fn extract_first_image_src(html: &str) -> Option<String> {
     extract_attr(&html[img_start..=img_end], "src")
 }
 
+fn extract_first_image_url(html: &str) -> Option<String> {
+    extract_first_image_src(html).or_else(|| extract_background_image_url(html))
+}
+
 fn extract_first_image_alt(html: &str) -> Option<String> {
     let img_start = html.find("<img")?;
     let img_end = img_start + html[img_start..].find('>')?;
     extract_attr(&html[img_start..=img_end], "alt")
 }
 
-fn extract_nearby_image_src(html: &str, start: usize, end: usize) -> Option<String> {
+fn extract_nearby_image_url(html: &str, start: usize, end: usize) -> Option<String> {
     let context = nearby_context(html, start, end);
-    extract_first_image_src(&context)
+    extract_first_image_url(&context)
+}
+
+fn extract_background_image_url(html: &str) -> Option<String> {
+    [
+        "background-image:url(",
+        "background-image: url(",
+        "background:url(",
+        "background: url(",
+    ]
+    .iter()
+    .find_map(|marker| {
+        let start = html.find(marker)? + marker.len();
+        let value = html[start..].split(')').next()?.trim();
+        let value = value.trim_matches('"').trim_matches('\'');
+        if value.is_empty() {
+            None
+        } else {
+            Some(html_unescape(value))
+        }
+    })
 }
 
 fn nearby_context(html: &str, start: usize, end: usize) -> String {
@@ -2833,6 +2859,31 @@ mod tests {
             "https://shinden.pl/series/59922-enen-no-shouboutai-san-no-shou-part-2"
         );
         assert_eq!(rows[0].source_label.as_deref(), Some("Odcinek 1"));
+    }
+
+    #[test]
+    fn parse_main_premieres_extracts_background_image_tiles() {
+        let html = r#"
+            <section class="box box-new-series">
+                <a href="/series/68638-tensei-shitara-slime-datta-ken-4th-season"
+                    class="img media-title-cover season-tile"
+                    style="background-image:url(/res/images/225x350/435918.jpg)">
+                    <span class="tile-title">
+                        <span>Tensei shitara Slime Datta Ken 4th Season</span>
+                    </span>
+                </a>
+            </section>
+        "#;
+
+        let rows = parse_main_premieres_html(html);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title_id, Some(68638));
+        assert_eq!(rows[0].name, "Tensei shitara Slime Datta Ken 4th Season");
+        assert_eq!(
+            rows[0].image_url,
+            "https://shinden.pl/res/images/225x350/435918.jpg"
+        );
     }
 
     #[test]
