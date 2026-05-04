@@ -1727,7 +1727,7 @@ fn parse_season_anime_html(html: &str) -> Vec<DiscoveryAnimeBase> {
 }
 
 fn parse_discovery_links(html: &str, include_source_label: bool) -> Vec<DiscoveryAnimeBase> {
-    let mut rows = Vec::new();
+    let mut rows: Vec<DiscoveryAnimeBase> = Vec::new();
     let mut seen = HashMap::<u64, usize>::new();
     let mut offset = 0;
 
