@@ -249,7 +249,6 @@ struct SearchAnime {
 }
 
 #[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 struct DiscoveryAnime {
     name: String,
     url: String,
@@ -258,10 +257,15 @@ struct DiscoveryAnime {
     rating: String,
     episodes: String,
     description: String,
+    #[serde(rename = "titleId")]
     title_id: Option<u64>,
+    #[serde(rename = "watchStatus")]
     watch_status: String,
+    #[serde(rename = "isFavourite")]
     is_favourite: u8,
+    #[serde(rename = "totalEpisodes")]
     total_episodes: Option<u32>,
+    #[serde(rename = "sourceLabel")]
     source_label: Option<String>,
 }
 
@@ -2888,6 +2892,39 @@ mod tests {
         assert_eq!(mapped[0].watch_status, "plan");
         assert_eq!(mapped[0].is_favourite, 1);
         assert_eq!(mapped[0].total_episodes, Some(12));
+    }
+
+    #[test]
+    fn discovery_anime_serializes_frontend_field_names() {
+        let anime = DiscoveryAnime {
+            name: "Anime 59922".to_string(),
+            url: "https://shinden.pl/series/59922-anime".to_string(),
+            image_url: "https://cdn.shinden.eu/cdn1/images/genuine/59922.jpg".to_string(),
+            anime_type: "TV".to_string(),
+            rating: "8,1".to_string(),
+            episodes: "12ep".to_string(),
+            description: String::new(),
+            title_id: Some(59922),
+            watch_status: "plan".to_string(),
+            is_favourite: 1,
+            total_episodes: Some(12),
+            source_label: Some("Odcinek 1".to_string()),
+        };
+
+        let json = serde_json::to_value(anime).expect("discovery anime should serialize");
+
+        assert_eq!(
+            json["image_url"].as_str(),
+            Some("https://cdn.shinden.eu/cdn1/images/genuine/59922.jpg")
+        );
+        assert_eq!(json["anime_type"].as_str(), Some("TV"));
+        assert!(json.get("imageUrl").is_none());
+        assert!(json.get("animeType").is_none());
+        assert_eq!(json["titleId"].as_u64(), Some(59922));
+        assert_eq!(json["watchStatus"].as_str(), Some("plan"));
+        assert_eq!(json["isFavourite"].as_u64(), Some(1));
+        assert_eq!(json["totalEpisodes"].as_u64(), Some(12));
+        assert_eq!(json["sourceLabel"].as_str(), Some("Odcinek 1"));
     }
 
     #[test]
