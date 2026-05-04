@@ -50,6 +50,21 @@ export type SearchAnime = Anime & {
     totalEpisodes: number | null;
 };
 
+export type DiscoveryAnime = Anime & {
+    titleId: number | null;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    totalEpisodes: number | null;
+    sourceLabel: string | null;
+};
+
+export type SeasonSlug = "current" | "winter" | "spring" | "summer" | "fall";
+
+export type SeasonOption = {
+    value: SeasonSlug;
+    label: string;
+};
+
 export type EpisodeProgress = Episode & {
     episodeId: number | null;
     episodeNo: number;
