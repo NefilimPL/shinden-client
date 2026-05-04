@@ -26,6 +26,8 @@ const WATCHING_CACHE_RETRY_DELAY_MS: u64 = 750;
 const USER_ID_CACHE_TTL_MS: u64 = 60 * 60 * 1000;
 const SHINDEN_TITLE_PLACEHOLDER: &str =
     "https://shinden.pl/res/other/placeholders/title/100x100.jpg";
+const SHINDEN_MAIN_URL: &str = "https://shinden.pl/main";
+const SHINDEN_SEASON_CURRENT_URL: &str = "https://shinden.pl/series/season/current";
 
 struct Api(
     ShindenAPI,
@@ -248,6 +250,37 @@ struct SearchAnime {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct DiscoveryAnime {
+    name: String,
+    url: String,
+    image_url: String,
+    anime_type: String,
+    rating: String,
+    episodes: String,
+    description: String,
+    title_id: Option<u64>,
+    watch_status: String,
+    is_favourite: u8,
+    total_episodes: Option<u32>,
+    source_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DiscoveryAnimeBase {
+    name: String,
+    url: String,
+    image_url: String,
+    anime_type: String,
+    rating: String,
+    episodes: String,
+    description: String,
+    title_id: Option<u64>,
+    total_episodes: Option<u32>,
+    source_label: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct EpisodeProgress {
     title: String,
     link: String,
@@ -324,6 +357,47 @@ async fn search(state: tauri::State<'_, Api>, query: String) -> Result<Vec<Searc
         .unwrap_or_default();
 
     Ok(map_search_anime_results(results, watching_items))
+}
+
+#[tauri::command]
+async fn get_main_premieres(state: tauri::State<'_, Api>) -> Result<Vec<DiscoveryAnime>, String> {
+    let html = state
+        .0
+        .get_html(SHINDEN_MAIN_URL)
+        .await
+        .map_err(|e| command_error("get_main_premieres", e))?;
+
+    let watching_items = fetch_all_userlist_items(&state.0, &state.2)
+        .await
+        .unwrap_or_default();
+
+    Ok(map_discovery_anime_results(
+        parse_main_premieres_html(&html),
+        watching_items,
+    ))
+}
+
+#[tauri::command]
+async fn get_season_anime(
+    state: tauri::State<'_, Api>,
+    year: Option<u16>,
+    season: String,
+) -> Result<Vec<DiscoveryAnime>, String> {
+    let url = season_page_url(year, &season);
+    let html = state
+        .0
+        .get_html(&url)
+        .await
+        .map_err(|e| command_error("get_season_anime", e))?;
+
+    let watching_items = fetch_all_userlist_items(&state.0, &state.2)
+        .await
+        .unwrap_or_default();
+
+    Ok(map_discovery_anime_results(
+        parse_season_anime_html(&html),
+        watching_items,
+    ))
 }
 
 #[tauri::command]
@@ -1493,6 +1567,48 @@ fn title_status_url(title_id: u64, user_id: &str) -> String {
     format!("https://lista.shinden.pl/api/title-status/{title_id}/{user_id}")
 }
 
+fn season_page_url(year: Option<u16>, season: &str) -> String {
+    let normalized = normalize_season_slug(season).unwrap_or_else(|| "current".to_string());
+    if normalized == "current" {
+        SHINDEN_SEASON_CURRENT_URL.to_string()
+    } else {
+        let year = year.unwrap_or(2026);
+        format!("https://shinden.pl/series/season/{year}/{normalized}")
+    }
+}
+
+fn normalize_season_slug(season: &str) -> Option<String> {
+    let normalized = normalize_polish_ascii(season.trim());
+
+    match normalized.as_str() {
+        "current" | "obecny" | "aktualny" => Some("current".to_string()),
+        "winter" | "zima" => Some("winter".to_string()),
+        "spring" | "wiosna" => Some("spring".to_string()),
+        "summer" | "lato" => Some("summer".to_string()),
+        "fall" | "autumn" | "jesien" => Some("fall".to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_polish_ascii(value: &str) -> String {
+    let mut normalized = String::new();
+    for character in value.to_lowercase().chars() {
+        match character {
+            '\u{0105}' => normalized.push('a'),
+            '\u{0107}' => normalized.push('c'),
+            '\u{0119}' => normalized.push('e'),
+            '\u{0142}' => normalized.push('l'),
+            '\u{0144}' => normalized.push('n'),
+            '\u{00f3}' => normalized.push('o'),
+            '\u{015b}' => normalized.push('s'),
+            '\u{017a}' | '\u{017c}' => normalized.push('z'),
+            _ => normalized.push(character),
+        }
+    }
+
+    normalized
+}
+
 fn legacy_userlist_series_url(user_id: &str, title_id: u64) -> String {
     format!("https://shinden.pl/api/userlist/{user_id}/series/{title_id}")
 }
@@ -1600,6 +1716,278 @@ fn extract_until_quote_after(source: &str, marker: &str) -> Option<String> {
     } else {
         Some(value.to_string())
     }
+}
+
+fn parse_main_premieres_html(html: &str) -> Vec<DiscoveryAnimeBase> {
+    parse_discovery_links(html, true)
+}
+
+fn parse_season_anime_html(html: &str) -> Vec<DiscoveryAnimeBase> {
+    parse_discovery_links(html, false)
+}
+
+fn parse_discovery_links(html: &str, include_source_label: bool) -> Vec<DiscoveryAnimeBase> {
+    let mut rows = Vec::new();
+    let mut seen = HashMap::<u64, usize>::new();
+    let mut offset = 0;
+
+    while let Some(anchor_start_relative) = html[offset..].find("<a") {
+        let anchor_start = offset + anchor_start_relative;
+        let Some(open_end_relative) = html[anchor_start..].find('>') else {
+            break;
+        };
+        let open_end = anchor_start + open_end_relative;
+        let open_tag = &html[anchor_start..=open_end];
+        let Some(href) = extract_attr(open_tag, "href") else {
+            offset = open_end + 1;
+            continue;
+        };
+        let title_id = title_id_from_series_url(&href).and_then(|value| value.parse::<u64>().ok());
+        let Some(title_id) = title_id else {
+            offset = open_end + 1;
+            continue;
+        };
+
+        let Some(close_relative) = html[open_end + 1..].find("</a>") else {
+            break;
+        };
+        let close = open_end + 1 + close_relative;
+        let anchor_body = &html[open_end + 1..close];
+        let mut name = compact_text(anchor_body);
+        let mut image_url = extract_first_image_src(anchor_body).unwrap_or_default();
+
+        if name.is_empty() {
+            name = extract_first_image_alt(anchor_body).unwrap_or_default();
+        }
+        if name.is_empty() {
+            offset = close + 4;
+            continue;
+        }
+
+        if image_url.is_empty() {
+            image_url = extract_nearby_image_src(html, anchor_start, close)
+                .unwrap_or_else(|| SHINDEN_TITLE_PLACEHOLDER.to_string());
+        }
+
+        let context = nearby_context(html, anchor_start, close);
+        let (anime_type, episodes) = extract_type_and_episodes(&context);
+        let source_label = include_source_label
+            .then(|| extract_episode_label(&context))
+            .flatten();
+        let row = DiscoveryAnimeBase {
+            name,
+            url: absolute_shinden_url(&href),
+            image_url: if image_url.is_empty() {
+                SHINDEN_TITLE_PLACEHOLDER.to_string()
+            } else {
+                absolute_shinden_url(&image_url)
+            },
+            anime_type,
+            rating: extract_rating(&context),
+            episodes,
+            description: String::new(),
+            title_id: Some(title_id),
+            total_episodes: extract_total_episodes(&context),
+            source_label,
+        };
+
+        if let Some(existing_index) = seen.get(&title_id).copied() {
+            if rows[existing_index].source_label.is_none() && row.source_label.is_some() {
+                rows[existing_index].source_label = row.source_label;
+            }
+            if rows[existing_index].image_url == SHINDEN_TITLE_PLACEHOLDER
+                && row.image_url != SHINDEN_TITLE_PLACEHOLDER
+            {
+                rows[existing_index].image_url = row.image_url;
+            }
+        } else {
+            seen.insert(title_id, rows.len());
+            rows.push(row);
+        }
+
+        offset = close + 4;
+    }
+
+    rows
+}
+
+fn absolute_shinden_url(url: &str) -> String {
+    let trimmed = html_unescape(url.trim());
+    if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
+        trimmed
+    } else if trimmed.starts_with("//") {
+        format!("https:{trimmed}")
+    } else if trimmed.starts_with('/') {
+        format!("https://shinden.pl{trimmed}")
+    } else {
+        format!("https://shinden.pl/{trimmed}")
+    }
+}
+
+fn html_unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&apos;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .trim()
+        .to_string()
+}
+
+fn strip_html_tags(value: &str) -> String {
+    let mut output = String::new();
+    let mut inside_tag = false;
+    for character in value.chars() {
+        match character {
+            '<' => inside_tag = true,
+            '>' => inside_tag = false,
+            _ if !inside_tag => output.push(character),
+            _ => {}
+        }
+    }
+
+    html_unescape(&output.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+fn extract_attr(tag: &str, attr: &str) -> Option<String> {
+    let marker = format!("{attr}=\"");
+    if let Some(start) = tag.find(&marker) {
+        let value_start = start + marker.len();
+        return tag[value_start..]
+            .split('"')
+            .next()
+            .map(html_unescape)
+            .filter(|value| !value.is_empty());
+    }
+
+    let marker = format!("{attr}='");
+    let start = tag.find(&marker)?;
+    let value_start = start + marker.len();
+    tag[value_start..]
+        .split('\'')
+        .next()
+        .map(html_unescape)
+        .filter(|value| !value.is_empty())
+}
+
+fn compact_text(value: &str) -> String {
+    strip_html_tags(value)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn extract_first_image_src(html: &str) -> Option<String> {
+    let img_start = html.find("<img")?;
+    let img_end = img_start + html[img_start..].find('>')?;
+    extract_attr(&html[img_start..=img_end], "src")
+}
+
+fn extract_first_image_alt(html: &str) -> Option<String> {
+    let img_start = html.find("<img")?;
+    let img_end = img_start + html[img_start..].find('>')?;
+    extract_attr(&html[img_start..=img_end], "alt")
+}
+
+fn extract_nearby_image_src(html: &str, start: usize, end: usize) -> Option<String> {
+    let context = nearby_context(html, start, end);
+    extract_first_image_src(&context)
+}
+
+fn nearby_context(html: &str, start: usize, end: usize) -> String {
+    let mut context_start = start.saturating_sub(900);
+    while context_start > 0 && !html.is_char_boundary(context_start) {
+        context_start -= 1;
+    }
+
+    let mut context_end = (end + 900).min(html.len());
+    while context_end < html.len() && !html.is_char_boundary(context_end) {
+        context_end += 1;
+    }
+
+    html[context_start..context_end].to_string()
+}
+
+fn extract_type_and_episodes(context: &str) -> (String, String) {
+    let compact = compact_text(context);
+    let tokens: Vec<&str> = compact.split_whitespace().collect();
+
+    for (index, token) in tokens.iter().enumerate() {
+        if !is_anime_type_token(token) {
+            continue;
+        }
+
+        let episodes = tokens[index + 1..]
+            .iter()
+            .take(4)
+            .find_map(|candidate| episode_token(candidate));
+        return (token.to_string(), episodes.unwrap_or_default());
+    }
+
+    (String::new(), String::new())
+}
+
+fn is_anime_type_token(token: &str) -> bool {
+    matches!(token, "TV" | "ONA" | "OVA" | "Movie" | "Special" | "Music")
+}
+
+fn episode_token(token: &str) -> Option<String> {
+    let trimmed = token.trim_matches(|character: char| {
+        matches!(character, ',' | '.' | ';' | ':' | ')' | '(')
+    });
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with("ep") || lower.ends_with("odc") {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_total_episodes(context: &str) -> Option<u32> {
+    let (_, episodes) = extract_type_and_episodes(context);
+    let digits: String = episodes
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect();
+    digits.parse::<u32>().ok()
+}
+
+fn extract_episode_label(context: &str) -> Option<String> {
+    let compact = compact_text(context);
+    let lower = compact.to_ascii_lowercase();
+    let marker = "odcinek ";
+    let start = lower.find(marker)? + marker.len();
+    let number: String = lower[start..]
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect();
+
+    if number.is_empty() {
+        None
+    } else {
+        Some(format!("Odcinek {number}"))
+    }
+}
+
+fn extract_rating(context: &str) -> String {
+    let compact = compact_text(context);
+    compact
+        .split_whitespace()
+        .find(|token| {
+            let mut parts = token.split(',');
+            parts.next().is_some_and(|part| {
+                !part.is_empty()
+                    && part.len() <= 2
+                    && part.chars().all(|character| character.is_ascii_digit())
+            }) && parts.next().is_some_and(|part| {
+                part.len() == 1 && part.chars().all(|character| character.is_ascii_digit())
+            })
+        })
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn shinden_watch_status_value(status: Option<&str>) -> Result<Option<&'static str>, String> {
@@ -1769,6 +2157,50 @@ fn map_search_anime_details(
             .and_then(|item| item.is_favourite)
             .unwrap_or_default(),
         total_episodes: watching_item.and_then(|item| item.episodes),
+    }
+}
+
+fn map_discovery_anime_results(
+    rows: Vec<DiscoveryAnimeBase>,
+    watching_items: Vec<WatchingListApiItem>,
+) -> Vec<DiscoveryAnime> {
+    let watching_by_title_id: HashMap<u64, WatchingListApiItem> = watching_items
+        .into_iter()
+        .map(|item| (item.title_id, item))
+        .collect();
+
+    rows.into_iter()
+        .map(|row| map_discovery_anime_details(row, &watching_by_title_id))
+        .collect()
+}
+
+fn map_discovery_anime_details(
+    row: DiscoveryAnimeBase,
+    watching_by_title_id: &HashMap<u64, WatchingListApiItem>,
+) -> DiscoveryAnime {
+    let watching_item = row
+        .title_id
+        .and_then(|title_id| watching_by_title_id.get(&title_id));
+
+    DiscoveryAnime {
+        name: row.name,
+        url: row.url,
+        image_url: row.image_url,
+        anime_type: row.anime_type,
+        rating: row.rating,
+        episodes: row.episodes,
+        description: row.description,
+        title_id: row.title_id,
+        watch_status: watching_item
+            .and_then(|item| item.watch_status.clone())
+            .unwrap_or_else(|| "no".to_string()),
+        is_favourite: watching_item
+            .and_then(|item| item.is_favourite)
+            .unwrap_or_default(),
+        total_episodes: row
+            .total_episodes
+            .or_else(|| watching_item.and_then(|item| item.episodes)),
+        source_label: row.source_label,
     }
 }
 
@@ -2263,6 +2695,8 @@ pub fn run() {
             write_log,
             test_connection,
             search,
+            get_main_premieres,
+            get_season_anime,
             get_watching_anime,
             get_episodes_with_progress,
             update_anime_status,
@@ -2340,6 +2774,120 @@ mod tests {
             description_pl: Some("Opis".to_string()),
             description_en: None,
         }
+    }
+
+    #[test]
+    fn season_page_url_uses_explicit_year_and_slug() {
+        assert_eq!(
+            season_page_url(Some(2026), "winter"),
+            "https://shinden.pl/series/season/2026/winter"
+        );
+    }
+
+    #[test]
+    fn season_page_url_can_use_current_shortcut() {
+        assert_eq!(
+            season_page_url(None, "current"),
+            "https://shinden.pl/series/season/current"
+        );
+    }
+
+    #[test]
+    fn normalize_season_slug_accepts_polish_aliases() {
+        assert_eq!(normalize_season_slug("zima").as_deref(), Some("winter"));
+        assert_eq!(normalize_season_slug("wiosna").as_deref(), Some("spring"));
+        assert_eq!(normalize_season_slug("lato").as_deref(), Some("summer"));
+        assert_eq!(normalize_season_slug("jesien").as_deref(), Some("fall"));
+        assert_eq!(
+            normalize_season_slug("jesie\u{0144}").as_deref(),
+            Some("fall")
+        );
+    }
+
+    #[test]
+    fn parse_main_premieres_extracts_series_links() {
+        let html = r#"
+            <section id="premieres">
+                <a class="cover" href="/series/59922-enen-no-shouboutai-san-no-shou-part-2">
+                    <img src="https://cdn.shinden.eu/cdn1/images/genuine/59922.jpg" alt="Enen no Shouboutai: San no Shou Part 2">
+                </a>
+                <a href="/series/59922-enen-no-shouboutai-san-no-shou-part-2">Enen no Shouboutai: San no Shou Part 2</a>
+                <span>Odcinek 1</span>
+            </section>
+        "#;
+
+        let rows = parse_main_premieres_html(html);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title_id, Some(59922));
+        assert_eq!(
+            rows[0].name,
+            "Enen no Shouboutai: San no Shou Part 2"
+        );
+        assert_eq!(
+            rows[0].url,
+            "https://shinden.pl/series/59922-enen-no-shouboutai-san-no-shou-part-2"
+        );
+        assert_eq!(rows[0].source_label.as_deref(), Some("Odcinek 1"));
+    }
+
+    #[test]
+    fn parse_season_anime_extracts_title_rows() {
+        let html = r#"
+            <article>
+                <h3><a href="/series/60001-jujutsu-kaisen-shimetsu-kaiyuu-zenpen">Jujutsu Kaisen: Shimetsu Kaiyuu - Zenpen</a></h3>
+                <img src="https://cdn.shinden.eu/cdn1/images/genuine/60001.jpg" alt="">
+                <p>TV 12ep</p>
+                <strong>8,7</strong>
+            </article>
+        "#;
+
+        let rows = parse_season_anime_html(html);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title_id, Some(60001));
+        assert_eq!(
+            rows[0].name,
+            "Jujutsu Kaisen: Shimetsu Kaiyuu - Zenpen"
+        );
+        assert_eq!(rows[0].anime_type, "TV");
+        assert_eq!(rows[0].episodes, "12ep");
+        assert_eq!(rows[0].rating, "8,7");
+    }
+
+    #[test]
+    fn map_discovery_anime_results_uses_matching_status() {
+        let rows = vec![DiscoveryAnimeBase {
+            name: "Anime 59922".to_string(),
+            url: "https://shinden.pl/series/59922-anime".to_string(),
+            image_url: SHINDEN_TITLE_PLACEHOLDER.to_string(),
+            anime_type: "TV".to_string(),
+            rating: "8,1".to_string(),
+            episodes: "12ep".to_string(),
+            description: String::new(),
+            title_id: Some(59922),
+            total_episodes: Some(12),
+            source_label: Some("Odcinek 1".to_string()),
+        }];
+        let watching_items = vec![WatchingListApiItem {
+            title_id: 59922,
+            watch_status: Some("plan".to_string()),
+            is_favourite: Some(1),
+            title: "Anime 59922".to_string(),
+            cover_id: None,
+            anime_type: Some("TV".to_string()),
+            summary_rating_total: Some("8.1".to_string()),
+            episodes: Some(12),
+            watched_episodes_cnt: Some("0".to_string()),
+            description_pl: None,
+            description_en: None,
+        }];
+
+        let mapped = map_discovery_anime_results(rows, watching_items);
+
+        assert_eq!(mapped[0].watch_status, "plan");
+        assert_eq!(mapped[0].is_favourite, 1);
+        assert_eq!(mapped[0].total_episodes, Some(12));
     }
 
     #[test]
