@@ -6,7 +6,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import traceback
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +81,7 @@ class PreflightResult:
 class BackendSourcePlan:
     local_path: Path
     git_url: str
+    archive_url: str
     needs_clone: bool
 
 
@@ -87,6 +91,7 @@ REQUIRED_TOOLS = [
 ]
 
 SHINDEN_API_GIT_URL = "https://github.com/NefilimPL/shinden-pl-api-rs.git"
+SHINDEN_API_ARCHIVE_URL = "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/master.zip"
 SHINDEN_API_REPO_DIR = "shinden-pl-api-rs"
 
 WINDOWS_TOOL_ALIASES = {
@@ -102,6 +107,11 @@ WINDOWS_BUILD_PACKAGES = [
     ),
     WingetPackage("Microsoft.EdgeWebView2Runtime"),
 ]
+
+WINGET_ALREADY_SATISFIED_MESSAGES = (
+    "No available upgrade found.",
+    "No newer package versions are available",
+)
 
 
 def find_project_root() -> Path:
@@ -135,11 +145,13 @@ def plan_backend_source(
     *,
     local_path: Path | None = None,
     git_url: str = SHINDEN_API_GIT_URL,
+    archive_url: str = SHINDEN_API_ARCHIVE_URL,
 ) -> BackendSourcePlan:
     backend_path = local_path or default_backend_repo_path(root)
     return BackendSourcePlan(
         local_path=backend_path,
         git_url=git_url,
+        archive_url=archive_url,
         needs_clone=not backend_repo_exists(backend_path),
     )
 
@@ -149,7 +161,7 @@ def backend_source_log_lines(plan: BackendSourcePlan) -> list[str]:
         return [
             f"Backend source: GitHub fallback {plan.git_url}",
             f"Local backend repo not found at: {plan.local_path}",
-            f"Will clone backend repo into: {plan.local_path}",
+            f"Will fetch backend repo into: {plan.local_path}",
         ]
 
     return [
@@ -166,6 +178,8 @@ def ensure_backend_source(
     log_file,
     command_runner: Callable[..., None] | None = None,
     git_command: str | None = None,
+    tool_lookup: Callable[[str], str | None] = shutil.which,
+    archive_downloader: Callable[[str, Path], None] | None = None,
 ) -> None:
     if not plan.needs_clone:
         return
@@ -176,24 +190,71 @@ def ensure_backend_source(
             "Remove it, add a Cargo.toml there, or set up shinden-pl-api-rs manually."
         )
 
-    git = git_command or resolve_tool("git")
-    if git is None:
-        raise BuildError(
-            "Local backend repo is missing and Git was not found in PATH. "
-            f"Install Git or clone {plan.git_url} into {plan.local_path} manually."
-        )
+    git = git_command if git_command is not None else resolve_tool("git", tool_lookup=tool_lookup)
 
     plan.local_path.parent.mkdir(parents=True, exist_ok=True)
-    runner = command_runner or run_command
-    runner(
-        [git, "clone", plan.git_url, str(plan.local_path)],
-        cwd=cwd,
-        env=env,
-        log_file=log_file,
-    )
+    if git is not None:
+        runner = command_runner or run_command
+        runner(
+            [git, "clone", plan.git_url, str(plan.local_path)],
+            cwd=cwd,
+            env=env,
+            log_file=log_file,
+        )
+    else:
+        write_log(log_file, f"Git not found in PATH; downloading backend archive: {plan.archive_url}")
+        fetch_backend_archive(
+            plan,
+            archive_downloader=archive_downloader or download_backend_archive,
+            log_file=log_file,
+        )
 
     if not backend_repo_exists(plan.local_path):
-        raise BuildError(f"Cloned backend repo is missing Cargo.toml: {plan.local_path}")
+        raise BuildError(f"Fetched backend repo is missing Cargo.toml: {plan.local_path}")
+
+
+def download_backend_archive(url: str, destination: Path) -> None:
+    with urllib.request.urlopen(url) as response, destination.open("wb") as output:
+        shutil.copyfileobj(response, output)
+
+
+def fetch_backend_archive(
+    plan: BackendSourcePlan,
+    *,
+    archive_downloader: Callable[[str, Path], None],
+    log_file,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="shinden-api-", dir=plan.local_path.parent) as temp_dir:
+        temp_path = Path(temp_dir)
+        archive_path = temp_path / "shinden-pl-api-rs.zip"
+        archive_downloader(plan.archive_url, archive_path)
+        extract_backend_archive(archive_path, plan.local_path, temp_path / "extract")
+        write_log(log_file, f"Downloaded backend archive into: {plan.local_path}")
+
+
+def extract_backend_archive(archive_path: Path, destination: Path, extract_dir: Path) -> None:
+    with zipfile.ZipFile(archive_path) as archive:
+        validate_archive_members(archive)
+        archive.extractall(extract_dir)
+
+    candidates = [
+        child
+        for child in extract_dir.iterdir()
+        if child.is_dir() and (child / "Cargo.toml").is_file()
+    ]
+    if not candidates:
+        raise BuildError(f"Backend archive did not contain a Cargo repo: {archive_path}")
+    if len(candidates) > 1:
+        raise BuildError(f"Backend archive contained multiple Cargo repos: {archive_path}")
+
+    shutil.move(str(candidates[0]), str(destination))
+
+
+def validate_archive_members(archive: zipfile.ZipFile) -> None:
+    for member in archive.infolist():
+        parts = Path(member.filename).parts
+        if not parts or Path(member.filename).is_absolute() or ".." in parts:
+            raise BuildError(f"Refusing to extract unsafe backend archive path: {member.filename}")
 
 
 def plan_commands(
@@ -241,8 +302,8 @@ def resolve_tool(
     return None
 
 
-def ensure_tool(name: str) -> str:
-    path = resolve_tool(name)
+def ensure_tool(name: str, *, tool_lookup: Callable[[str], str | None] = shutil.which) -> str:
+    path = resolve_tool(name, tool_lookup=tool_lookup)
     if path is None:
         raise BuildError(
             f"Could not find '{name}' in PATH. Install Node.js/npm and Rust/Tauri requirements, "
@@ -288,7 +349,14 @@ def winget_install_commands(
     return commands
 
 
-def run_command(command: list[str], *, cwd: Path, env: dict[str, str], log_file) -> None:
+def run_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    log_file,
+    accepted_failure_fragments: tuple[str, ...] = (),
+) -> None:
     write_log(log_file, f"$ {' '.join(command)}")
     process = subprocess.Popen(
         command,
@@ -302,13 +370,23 @@ def run_command(command: list[str], *, cwd: Path, env: dict[str, str], log_file)
     )
 
     assert process.stdout is not None
+    output_lines: list[str] = []
     for line in process.stdout:
+        output_lines.append(line)
         write_console(line)
         log_file.write(line)
         log_file.flush()
+    process.stdout.close()
 
     exit_code = process.wait()
     if exit_code != 0:
+        output = "".join(output_lines)
+        if any(fragment in output for fragment in accepted_failure_fragments):
+            write_log(
+                log_file,
+                f"Command returned exit code {exit_code}, but output indicates the command is already satisfied; continuing.",
+            )
+            return
         raise BuildError(f"Command failed with exit code {exit_code}: {' '.join(command)}")
 
 
@@ -392,9 +470,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    root_override: Path | None = None,
+    tool_lookup: Callable[[str], str | None] = shutil.which,
+) -> int:
     args = parse_args(argv)
-    root = find_project_root()
+    root = root_override or find_project_root()
     log_dir = root / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "build-exe.log"
@@ -405,34 +488,37 @@ def main(argv: list[str] | None = None) -> int:
         write_log(log_file, f"Project root: {root}")
         write_log(log_file, f"Runtime app logs: {log_dir / 'shinden-client.log'}")
 
-        preflight_result = preflight()
+        preflight_result = preflight(tool_lookup=tool_lookup)
         write_log(log_file, preflight_result.summary())
         backend_plan = plan_backend_source(root)
         for line in backend_source_log_lines(backend_plan):
             write_log(log_file, line)
 
         if args.preflight:
-            if backend_plan.needs_clone and resolve_tool("git") is None:
-                write_log(log_file, "Preflight failed: Git is required because the local backend repo is missing.")
-                return 1
             return 0 if preflight_result.ok else 1
 
         if args.bootstrap:
-            if shutil.which("winget") is None:
+            if tool_lookup("winget") is None:
                 raise BuildError("Could not find 'winget' in PATH. Install missing tools manually or enable App Installer.")
             commands = winget_install_commands(preflight_result, accept_agreements=args.yes)
             if not commands:
                 write_log(log_file, "Bootstrap skipped. Required tools are already available.")
                 return 0
             for command in commands:
-                run_command(command, cwd=root, env=os.environ.copy(), log_file=log_file)
+                run_command(
+                    command,
+                    cwd=root,
+                    env=os.environ.copy(),
+                    log_file=log_file,
+                    accepted_failure_fragments=WINGET_ALREADY_SATISFIED_MESSAGES,
+                )
             write_log(log_file, "Bootstrap finished. Reopen your terminal before building so PATH refreshes.")
             return 0
 
         if not args.dry_run and not preflight_result.ok:
             raise BuildError(preflight_result.summary())
 
-        npm_command = (resolve_tool("npm") or "npm") if args.dry_run else ensure_tool("npm")
+        npm_command = (resolve_tool("npm", tool_lookup=tool_lookup) or "npm") if args.dry_run else ensure_tool("npm", tool_lookup=tool_lookup)
         tauri_config = None if args.updater_artifacts else write_local_tauri_config(root)
         env = build_environment(root)
         write_log(log_file, f"Cargo target dir: {env['CARGO_TARGET_DIR']}")
@@ -446,8 +532,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             write_log(log_file, "Dry run only. Planned commands:")
             if backend_plan.needs_clone:
-                git = resolve_tool("git") or "git"
-                write_log(log_file, f"  {git} clone {backend_plan.git_url} {backend_plan.local_path}")
+                if git := resolve_tool("git", tool_lookup=tool_lookup):
+                    write_log(log_file, f"  {git} clone {backend_plan.git_url} {backend_plan.local_path}")
+                else:
+                    write_log(log_file, f"  download {backend_plan.archive_url} -> {backend_plan.local_path}")
             for command in commands:
                 write_log(log_file, f"  {' '.join(command)}")
             return 0
@@ -455,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.clean:
             clean_dist(root, dist_dir)
 
-        ensure_backend_source(backend_plan, cwd=root, env=env, log_file=log_file)
+        ensure_backend_source(backend_plan, cwd=root, env=env, log_file=log_file, tool_lookup=tool_lookup)
 
         for command in commands:
             run_command(command, cwd=root, env=env, log_file=log_file)

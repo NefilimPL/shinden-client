@@ -1,7 +1,10 @@
 import unittest
 import io
 import json
+import os
+import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from scripts import build_exe
@@ -286,6 +289,60 @@ class BuildExePlanTests(unittest.TestCase):
                     )
                 ],
             )
+
+    def test_backend_source_downloads_github_archive_when_git_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+            plan = build_exe.plan_backend_source(root)
+            downloads = []
+
+            def fake_downloader(url, destination):
+                downloads.append((url, destination))
+                with zipfile.ZipFile(destination, "w") as archive:
+                    archive.writestr("shinden-pl-api-rs-master/Cargo.toml", "[package]\nname = \"shinden-pl-api\"\n")
+                    archive.writestr("shinden-pl-api-rs-master/src/lib.rs", "")
+
+            build_exe.ensure_backend_source(
+                plan,
+                cwd=root,
+                env={"PATH": "example"},
+                log_file=io.StringIO(),
+                tool_lookup=lambda name: None,
+                archive_downloader=fake_downloader,
+            )
+
+            self.assertEqual(downloads[0][0], "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/master.zip")
+            self.assertTrue((plan.local_path / "Cargo.toml").is_file())
+
+    def test_preflight_does_not_fail_when_backend_needs_github_archive_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+
+            exit_code = build_exe.main(
+                ["--preflight"],
+                root_override=root,
+                tool_lookup=lambda name: f"C:/tools/{name}.exe" if name in {"npm.cmd", "cargo.exe"} else None,
+            )
+
+            self.assertEqual(exit_code, 0)
+
+    def test_run_command_can_accept_winget_existing_package_exit(self):
+        log = io.StringIO()
+
+        build_exe.run_command(
+            [
+                sys.executable,
+                "-c",
+                "print('No available upgrade found.'); raise SystemExit(42)",
+            ],
+            cwd=Path.cwd(),
+            env=os.environ.copy(),
+            log_file=log,
+            accepted_failure_fragments=("No available upgrade found.",),
+        )
+
+        self.assertIn("output indicates the command is already satisfied", log.getvalue())
 
 
 if __name__ == "__main__":
