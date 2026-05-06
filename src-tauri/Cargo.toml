@@ -21,14 +21,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [ "macos-private-api", "unstable"] }
 tauri-plugin-opener = "2"
-shinden-pl-api = "0.1.5"
+shinden-pl-api = { path = "../../shinden-pl-api-rs" }
 cda-dl = "0.1.0"
-reqwest = "0.12.22"
 tauri-plugin-http = "2"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-warp = "0.4.2"
-futures-util = "0.3.31"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
