@@ -1,4 +1,5 @@
 import unittest
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -228,6 +229,63 @@ class BuildExePlanTests(unittest.TestCase):
                 ],
             ],
         )
+
+    def test_backend_source_prefers_local_repo_when_cargo_toml_exists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            local_backend = root.parent / "shinden-pl-api-rs"
+            local_backend.mkdir(parents=True)
+            (local_backend / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
+
+            plan = build_exe.plan_backend_source(root)
+
+            self.assertFalse(plan.needs_clone)
+            self.assertEqual(plan.local_path, local_backend)
+            self.assertIn("local repo", "\n".join(build_exe.backend_source_log_lines(plan)))
+
+    def test_backend_source_falls_back_to_github_when_local_repo_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+
+            plan = build_exe.plan_backend_source(root)
+
+            self.assertTrue(plan.needs_clone)
+            self.assertEqual(plan.git_url, "https://github.com/NefilimPL/shinden-pl-api-rs.git")
+            log_text = "\n".join(build_exe.backend_source_log_lines(plan))
+            self.assertIn("GitHub fallback", log_text)
+            self.assertIn(str(root.parent / "shinden-pl-api-rs"), log_text)
+
+    def test_backend_source_clone_populates_missing_local_repo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+            plan = build_exe.plan_backend_source(root)
+            commands = []
+
+            def fake_runner(command, *, cwd, env, log_file):
+                commands.append((command, cwd, env))
+                plan.local_path.mkdir()
+                (plan.local_path / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
+
+            build_exe.ensure_backend_source(
+                plan,
+                cwd=root,
+                env={"PATH": "example"},
+                log_file=io.StringIO(),
+                command_runner=fake_runner,
+                git_command="git",
+            )
+
+            self.assertEqual(
+                commands,
+                [
+                    (
+                        ["git", "clone", "https://github.com/NefilimPL/shinden-pl-api-rs.git", str(plan.local_path)],
+                        root,
+                        {"PATH": "example"},
+                    )
+                ],
+            )
 
 
 if __name__ == "__main__":

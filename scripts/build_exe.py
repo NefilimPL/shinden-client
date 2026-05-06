@@ -74,14 +74,25 @@ class PreflightResult:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class BackendSourcePlan:
+    local_path: Path
+    git_url: str
+    needs_clone: bool
+
+
 REQUIRED_TOOLS = [
     BuildTool("npm", "Node.js/npm", "OpenJS.NodeJS.LTS"),
     BuildTool("cargo", "Rust/Cargo", "Rustlang.Rustup"),
 ]
 
+SHINDEN_API_GIT_URL = "https://github.com/NefilimPL/shinden-pl-api-rs.git"
+SHINDEN_API_REPO_DIR = "shinden-pl-api-rs"
+
 WINDOWS_TOOL_ALIASES = {
     "npm": ("npm", "npm.cmd"),
     "cargo": ("cargo", "cargo.exe"),
+    "git": ("git", "git.exe"),
 }
 
 WINDOWS_BUILD_PACKAGES = [
@@ -109,6 +120,80 @@ def default_cargo_target_dir(root: Path) -> Path:
     if os.name == "nt" and (local_app_data := os.environ.get("LOCALAPPDATA")):
         return Path(local_app_data) / "ShindenClient" / "cargo-target"
     return root / "src-tauri" / "target"
+
+
+def default_backend_repo_path(root: Path) -> Path:
+    return root.parent / SHINDEN_API_REPO_DIR
+
+
+def backend_repo_exists(path: Path) -> bool:
+    return (path / "Cargo.toml").is_file()
+
+
+def plan_backend_source(
+    root: Path,
+    *,
+    local_path: Path | None = None,
+    git_url: str = SHINDEN_API_GIT_URL,
+) -> BackendSourcePlan:
+    backend_path = local_path or default_backend_repo_path(root)
+    return BackendSourcePlan(
+        local_path=backend_path,
+        git_url=git_url,
+        needs_clone=not backend_repo_exists(backend_path),
+    )
+
+
+def backend_source_log_lines(plan: BackendSourcePlan) -> list[str]:
+    if plan.needs_clone:
+        return [
+            f"Backend source: GitHub fallback {plan.git_url}",
+            f"Local backend repo not found at: {plan.local_path}",
+            f"Will clone backend repo into: {plan.local_path}",
+        ]
+
+    return [
+        f"Backend source: local repo {plan.local_path}",
+        f"GitHub fallback if missing: {plan.git_url}",
+    ]
+
+
+def ensure_backend_source(
+    plan: BackendSourcePlan,
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    log_file,
+    command_runner: Callable[..., None] | None = None,
+    git_command: str | None = None,
+) -> None:
+    if not plan.needs_clone:
+        return
+
+    if plan.local_path.exists():
+        raise BuildError(
+            f"Backend path exists but is not a Cargo repo: {plan.local_path}. "
+            "Remove it, add a Cargo.toml there, or set up shinden-pl-api-rs manually."
+        )
+
+    git = git_command or resolve_tool("git")
+    if git is None:
+        raise BuildError(
+            "Local backend repo is missing and Git was not found in PATH. "
+            f"Install Git or clone {plan.git_url} into {plan.local_path} manually."
+        )
+
+    plan.local_path.parent.mkdir(parents=True, exist_ok=True)
+    runner = command_runner or run_command
+    runner(
+        [git, "clone", plan.git_url, str(plan.local_path)],
+        cwd=cwd,
+        env=env,
+        log_file=log_file,
+    )
+
+    if not backend_repo_exists(plan.local_path):
+        raise BuildError(f"Cloned backend repo is missing Cargo.toml: {plan.local_path}")
 
 
 def plan_commands(
@@ -322,8 +407,14 @@ def main(argv: list[str] | None = None) -> int:
 
         preflight_result = preflight()
         write_log(log_file, preflight_result.summary())
+        backend_plan = plan_backend_source(root)
+        for line in backend_source_log_lines(backend_plan):
+            write_log(log_file, line)
 
         if args.preflight:
+            if backend_plan.needs_clone and resolve_tool("git") is None:
+                write_log(log_file, "Preflight failed: Git is required because the local backend repo is missing.")
+                return 1
             return 0 if preflight_result.ok else 1
 
         if args.bootstrap:
@@ -354,12 +445,17 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.dry_run:
             write_log(log_file, "Dry run only. Planned commands:")
+            if backend_plan.needs_clone:
+                git = resolve_tool("git") or "git"
+                write_log(log_file, f"  {git} clone {backend_plan.git_url} {backend_plan.local_path}")
             for command in commands:
                 write_log(log_file, f"  {' '.join(command)}")
             return 0
 
         if args.clean:
             clean_dist(root, dist_dir)
+
+        ensure_backend_source(backend_plan, cwd=root, env=env, log_file=log_file)
 
         for command in commands:
             run_command(command, cwd=root, env=env, log_file=log_file)
