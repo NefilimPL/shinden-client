@@ -101,7 +101,14 @@ def build_environment(root: Path, base_env: dict[str, str] | None = None) -> dic
     env = dict(base_env or os.environ)
     env["SHINDEN_CLIENT_LOG_DIR"] = str(root / "logs")
     env["SHINDEN_BUILD_PROJECT_ROOT"] = str(root)
+    env.setdefault("CARGO_TARGET_DIR", str(default_cargo_target_dir(root)))
     return env
+
+
+def default_cargo_target_dir(root: Path) -> Path:
+    if os.name == "nt" and (local_app_data := os.environ.get("LOCALAPPDATA")):
+        return Path(local_app_data) / "ShindenClient" / "cargo-target"
+    return root / "src-tauri" / "target"
 
 
 def plan_commands(
@@ -211,7 +218,7 @@ def run_command(command: list[str], *, cwd: Path, env: dict[str, str], log_file)
 
     assert process.stdout is not None
     for line in process.stdout:
-        print(line, end="")
+        write_console(line)
         log_file.write(line)
         log_file.flush()
 
@@ -220,17 +227,25 @@ def run_command(command: list[str], *, cwd: Path, env: dict[str, str], log_file)
         raise BuildError(f"Command failed with exit code {exit_code}: {' '.join(command)}")
 
 
-def collect_exe_artifacts(root: Path) -> list[Path]:
-    release_dir = root / "src-tauri" / "target" / "release"
+def collect_exe_artifacts(root: Path, cargo_target_dir: Path | None = None) -> list[Path]:
+    target_dirs: list[Path] = []
+    if cargo_target_dir is not None:
+        target_dirs.append(cargo_target_dir)
+    project_target_dir = root / "src-tauri" / "target"
+    if project_target_dir not in target_dirs:
+        target_dirs.append(project_target_dir)
+
     artifacts: list[Path] = []
 
-    standalone = release_dir / "ShindenClient.exe"
-    if standalone.exists():
-        artifacts.append(standalone)
+    for target_dir in target_dirs:
+        release_dir = target_dir / "release"
+        standalone = release_dir / "ShindenClient.exe"
+        if standalone.exists():
+            artifacts.append(standalone)
 
-    bundle_dir = release_dir / "bundle"
-    if bundle_dir.exists():
-        artifacts.extend(sorted(bundle_dir.rglob("*.exe")))
+        bundle_dir = release_dir / "bundle"
+        if bundle_dir.exists():
+            artifacts.extend(sorted(bundle_dir.rglob("*.exe")))
 
     return artifacts
 
@@ -262,9 +277,16 @@ def clean_dist(root: Path, dist_dir: Path) -> None:
 
 def write_log(log_file, message: str) -> None:
     line = f"[{datetime.now().isoformat(timespec='seconds')}] {message}\n"
-    print(line, end="")
+    write_console(line)
     log_file.write(line)
     log_file.flush()
+
+
+def write_console(text: str) -> None:
+    encoding = sys.stdout.encoding or "utf-8"
+    safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    sys.stdout.write(safe_text)
+    sys.stdout.flush()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -322,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         npm_command = (resolve_tool("npm") or "npm") if args.dry_run else ensure_tool("npm")
         tauri_config = None if args.updater_artifacts else write_local_tauri_config(root)
         env = build_environment(root)
+        write_log(log_file, f"Cargo target dir: {env['CARGO_TARGET_DIR']}")
         commands = plan_commands(
             root,
             skip_install=args.skip_install,
@@ -341,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         for command in commands:
             run_command(command, cwd=root, env=env, log_file=log_file)
 
-        artifacts = collect_exe_artifacts(root)
+        artifacts = collect_exe_artifacts(root, Path(env["CARGO_TARGET_DIR"]))
         if not artifacts:
             raise BuildError("Build finished, but no EXE artifacts were found in src-tauri/target/release.")
 
