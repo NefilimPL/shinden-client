@@ -61,7 +61,7 @@ source = build_exe.prepare_backend_source(
     command_runner=fake_runner,
     git_command="git",
 )
-self.assertEqual(source.path, root / "build" / "backend-source" / "shinden-pl-api-rs")
+self.assertEqual(source.path, root / "cache" / "backend-source" / "shinden-pl-api-rs")
 self.assertEqual(source.branch, "dev")
 self.assertFalse(source.is_local_fallback)
 ```
@@ -76,7 +76,7 @@ Expected: fail because `prepare_backend_source` does not exist.
 
 - [ ] **Step 3: Implement minimal source preparation**
 
-Add a `PreparedBackendSource` dataclass and `prepare_backend_source`. Remote source goes under `build/backend-source/shinden-pl-api-rs`, gets cleaned before reuse, first tries `git clone --branch <branch> --single-branch`, then archive download, then local fallback.
+Add a `PreparedBackendSource` dataclass and `prepare_backend_source`. Remote source goes under `cache/backend-source/shinden-pl-api-rs`, gets cleaned before reuse, first tries `git clone --branch <branch> --single-branch`, then archive download, then local fallback.
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
@@ -167,4 +167,3 @@ Expected: exit code 0, planned build logs include backend branch information and
 Run: `git diff --stat`
 
 Expected: changes are limited to the implementation plan, tests, Python build script, and launcher batch file.
-

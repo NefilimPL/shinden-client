@@ -5,7 +5,7 @@ cd /d "%~dp0"
 set "ROOT=%~dp0"
 set "LOG_DIR=%ROOT%logs"
 set "LOG_FILE=%LOG_DIR%\build-exe.log"
-set "SHINDEN_API_GIT_URL=https://github.com/NefilimPL/shinden-pl-api-rs.git"
+set "BACKEND_BRANCH_LIST_FILE=%LOG_DIR%\backend-branches.txt"
 set "FORCE_BOOTSTRAP=0"
 set "HAS_BACKEND_BRANCH_ARG=0"
 if /I "%~1"=="--force-bootstrap" (
@@ -109,24 +109,24 @@ if "%HAS_BACKEND_BRANCH_ARG%"=="1" (
 )
 
 set "BACKEND_BRANCH_COUNT=0"
-where git >nul 2>nul
+
+call :run_python scripts\build_exe.py --list-backend-branches > "%BACKEND_BRANCH_LIST_FILE%" 2>> "%LOG_FILE%"
 if errorlevel 1 (
-    call :log "Git was not found while detecting backend branches. Using fallback branch choices."
+    call :log "Backend branch detection failed. Using fallback branch choices."
     goto backend_branch_fallback
 )
 
-for /f "tokens=2" %%B in ('git ls-remote --heads "%SHINDEN_API_GIT_URL%" 2^>nul') do (
-    set "BACKEND_BRANCH_REF=%%B"
-    set "BACKEND_BRANCH_REF=!BACKEND_BRANCH_REF:refs/heads/=!"
-    if not "!BACKEND_BRANCH_REF!"=="" (
+for /f "usebackq delims=" %%B in ("%BACKEND_BRANCH_LIST_FILE%") do (
+    if not "%%B"=="" (
         set /a BACKEND_BRANCH_COUNT+=1
-        set "BACKEND_BRANCH_!BACKEND_BRANCH_COUNT!=!BACKEND_BRANCH_REF!"
-        set "BACKEND_BRANCH_VALUE_!BACKEND_BRANCH_COUNT!=!BACKEND_BRANCH_REF!"
+        set "BACKEND_BRANCH_!BACKEND_BRANCH_COUNT!=%%B"
+        set "BACKEND_BRANCH_VALUE_!BACKEND_BRANCH_COUNT!=%%B"
     )
 )
+del "%BACKEND_BRANCH_LIST_FILE%" >nul 2>nul
 
 if "!BACKEND_BRANCH_COUNT!"=="0" (
-    call :log "No backend branches detected from remote. Using fallback branch choices."
+    call :log "No backend branches detected through GitHub API. Using fallback branch choices."
     goto backend_branch_fallback
 )
 goto backend_branch_choose

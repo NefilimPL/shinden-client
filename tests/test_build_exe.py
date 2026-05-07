@@ -55,7 +55,8 @@ class BuildExePlanTests(unittest.TestCase):
 
         self.assertIn("call :select_backend_branch", contents)
         self.assertIn(":select_backend_branch", contents)
-        self.assertIn("git ls-remote --heads", contents)
+        self.assertIn("--list-backend-branches", contents)
+        self.assertNotIn("git ls-remote --heads", contents)
         self.assertIn("--backend-branch", contents)
         self.assertIn("Main", contents)
         self.assertIn("dev", contents)
@@ -194,6 +195,36 @@ class BuildExePlanTests(unittest.TestCase):
         self.assertEqual(
             build_exe.backend_archive_url_for_branch("dev"),
             "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/dev.zip",
+        )
+
+    def test_backend_source_temp_root_does_not_use_frontend_build_output(self):
+        root = Path("C:/project")
+
+        temp_root = build_exe.backend_source_temp_root(root)
+
+        self.assertEqual(temp_root, root / "cache" / "backend-source")
+        self.assertNotEqual(temp_root.parts[len(root.parts)], "build")
+
+    def test_fetch_remote_backend_branches_uses_github_api_without_git(self):
+        payload = json.dumps(
+            [
+                {"name": "master"},
+                {"name": "dev"},
+                {"name": "feature/api"},
+            ]
+        ).encode("utf-8")
+        requested_urls = []
+
+        def fake_json_downloader(url):
+            requested_urls.append(url)
+            return payload
+
+        branches = build_exe.fetch_remote_backend_branches(json_downloader=fake_json_downloader)
+
+        self.assertEqual(branches, ["master", "dev", "feature/api"])
+        self.assertEqual(
+            requested_urls,
+            ["https://api.github.com/repos/NefilimPL/shinden-pl-api-rs/branches?per_page=100"],
         )
 
     def test_winget_bootstrap_commands_install_missing_packages(self):
@@ -362,7 +393,7 @@ class BuildExePlanTests(unittest.TestCase):
 
             def fake_runner(command, *, cwd, env, log_file):
                 commands.append((command, cwd, env))
-                backend_path = root / "build" / "backend-source" / "shinden-pl-api-rs"
+                backend_path = root / "cache" / "backend-source" / "shinden-pl-api-rs"
                 backend_path.mkdir(parents=True)
                 (backend_path / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
 
@@ -374,7 +405,7 @@ class BuildExePlanTests(unittest.TestCase):
                 git_command="git",
             )
 
-            self.assertEqual(source.path, root / "build" / "backend-source" / "shinden-pl-api-rs")
+            self.assertEqual(source.path, root / "cache" / "backend-source" / "shinden-pl-api-rs")
             self.assertEqual(source.branch, "dev")
             self.assertFalse(source.is_local_fallback)
             self.assertEqual(
@@ -427,7 +458,7 @@ class BuildExePlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "shinden-client"
             manifest = root / "src-tauri" / "Cargo.toml"
-            backend_path = root / "build" / "backend-source" / "shinden-pl-api-rs"
+            backend_path = root / "cache" / "backend-source" / "shinden-pl-api-rs"
             manifest.parent.mkdir(parents=True)
             backend_path.mkdir(parents=True)
             original = "\n".join(

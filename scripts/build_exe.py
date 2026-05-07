@@ -101,6 +101,7 @@ REQUIRED_TOOLS = [
 
 SHINDEN_API_GIT_URL = "https://github.com/NefilimPL/shinden-pl-api-rs.git"
 SHINDEN_API_ARCHIVE_URL = "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/master.zip"
+SHINDEN_API_BRANCHES_URL = "https://api.github.com/repos/NefilimPL/shinden-pl-api-rs/branches?per_page=100"
 SHINDEN_API_REPO_DIR = "shinden-pl-api-rs"
 
 WINDOWS_TOOL_ALIASES = {
@@ -146,7 +147,7 @@ def default_backend_repo_path(root: Path) -> Path:
 
 
 def backend_source_temp_root(root: Path) -> Path:
-    return root / "build" / "backend-source"
+    return root / "cache" / "backend-source"
 
 
 def backend_repo_exists(path: Path) -> bool:
@@ -198,6 +199,28 @@ def backend_branch_download_candidates(choice: str) -> list[str]:
 
 def backend_archive_url_for_branch(branch: str) -> str:
     return f"https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/{branch}.zip"
+
+
+def download_json_url(url: str) -> bytes:
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "shinden-client-build-exe"},
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.read()
+
+
+def fetch_remote_backend_branches(
+    *,
+    json_downloader: Callable[[str], bytes] = download_json_url,
+) -> list[str]:
+    payload = json.loads(json_downloader(SHINDEN_API_BRANCHES_URL).decode("utf-8"))
+    branch_names = [
+        item.get("name", "")
+        for item in payload
+        if isinstance(item, dict)
+    ]
+    return normalize_backend_branches(branch_names)
 
 
 def plan_backend_source(
@@ -677,6 +700,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-copy", action="store_true", help="Leave artifacts in src-tauri/target/release only.")
     parser.add_argument("--preflight", action="store_true", help="Check system build requirements and exit.")
     parser.add_argument("--bootstrap", action="store_true", help="Install missing system build tools with winget and exit.")
+    parser.add_argument("--list-backend-branches", action="store_true", help="Print remote backend branch names and exit.")
     parser.add_argument("--yes", action="store_true", help="Accept winget source/package agreements during bootstrap.")
     parser.add_argument(
         "--backend-branch",
@@ -700,6 +724,12 @@ def main(
 ) -> int:
     args = parse_args(argv)
     root = root_override or find_project_root()
+
+    if args.list_backend_branches:
+        for branch in fetch_remote_backend_branches():
+            write_console(f"{branch}\n")
+        return 0
+
     log_dir = root / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "build-exe.log"
