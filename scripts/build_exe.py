@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -85,6 +86,14 @@ class BackendSourcePlan:
     needs_clone: bool
 
 
+@dataclass(frozen=True)
+class PreparedBackendSource:
+    path: Path
+    branch: str
+    is_local_fallback: bool
+    temporary_root: Path | None = None
+
+
 REQUIRED_TOOLS = [
     BuildTool("npm", "Node.js/npm", "OpenJS.NodeJS.LTS"),
     BuildTool("cargo", "Rust/Cargo", "Rustlang.Rustup"),
@@ -136,8 +145,59 @@ def default_backend_repo_path(root: Path) -> Path:
     return root.parent / SHINDEN_API_REPO_DIR
 
 
+def backend_source_temp_root(root: Path) -> Path:
+    return root / "build" / "backend-source"
+
+
 def backend_repo_exists(path: Path) -> bool:
     return (path / "Cargo.toml").is_file()
+
+
+def normalize_backend_branches(branches: Iterable[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for branch in branches:
+        value = branch.strip()
+        if not value or " -> " in value:
+            continue
+        if value.startswith("refs/heads/"):
+            value = value.removeprefix("refs/heads/")
+        if value.startswith("origin/"):
+            value = value.removeprefix("origin/")
+        if value == "HEAD":
+            continue
+        if value not in seen:
+            seen.add(value)
+            normalized.append(value)
+
+    return normalized
+
+
+def resolve_backend_branch_choice(choice: str, available_branches: Iterable[str]) -> str:
+    branch = choice.strip()
+    available = list(available_branches)
+    available_by_lower = {candidate.lower(): candidate for candidate in available}
+
+    if branch.lower() == "main":
+        if "main" in available_by_lower:
+            return available_by_lower["main"]
+        if "master" in available_by_lower:
+            return available_by_lower["master"]
+        return "main"
+
+    return available_by_lower.get(branch.lower(), branch)
+
+
+def backend_branch_download_candidates(choice: str) -> list[str]:
+    branch = choice.strip() or "Main"
+    if branch.lower() == "main":
+        return ["main", "master"]
+    return [branch]
+
+
+def backend_archive_url_for_branch(branch: str) -> str:
+    return f"https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/{branch}.zip"
 
 
 def plan_backend_source(
@@ -250,6 +310,117 @@ def extract_backend_archive(archive_path: Path, destination: Path, extract_dir: 
     shutil.move(str(candidates[0]), str(destination))
 
 
+def clean_backend_source_temp(root: Path) -> None:
+    temp_root = backend_source_temp_root(root)
+    resolved_root = root.resolve()
+    resolved_temp = temp_root.resolve()
+    if resolved_temp == resolved_root or resolved_root not in resolved_temp.parents:
+        raise BuildError(f"Refusing to clean backend source outside the project: {resolved_temp}")
+    if temp_root.exists():
+        shutil.rmtree(temp_root)
+
+
+def prepare_backend_source(
+    root: Path,
+    *,
+    branch: str,
+    log_file,
+    command_runner: Callable[..., None] | None = None,
+    git_command: str | None = None,
+    tool_lookup: Callable[[str], str | None] = shutil.which,
+    archive_downloader: Callable[[str, Path], None] | None = None,
+) -> PreparedBackendSource:
+    temp_root = backend_source_temp_root(root)
+    remote_path = temp_root / SHINDEN_API_REPO_DIR
+    local_fallback = default_backend_repo_path(root)
+    git = git_command if git_command is not None else resolve_tool("git", tool_lookup=tool_lookup)
+    runner = command_runner or run_command
+    remote_errors: list[str] = []
+    requested_branch = branch.strip() or "Main"
+
+    clean_backend_source_temp(root)
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    for candidate_branch in backend_branch_download_candidates(requested_branch):
+        if git is not None:
+            try:
+                runner(
+                    [
+                        git,
+                        "clone",
+                        "--branch",
+                        candidate_branch,
+                        "--single-branch",
+                        SHINDEN_API_GIT_URL,
+                        str(remote_path),
+                    ],
+                    cwd=root,
+                    env=os.environ.copy(),
+                    log_file=log_file,
+                )
+                if backend_repo_exists(remote_path):
+                    return PreparedBackendSource(
+                        path=remote_path,
+                        branch=candidate_branch,
+                        is_local_fallback=False,
+                        temporary_root=temp_root,
+                    )
+                remote_errors.append(
+                    f"clone for {candidate_branch} finished but Cargo.toml is missing at {remote_path}"
+                )
+            except Exception as error:
+                remote_errors.append(f"git clone for {candidate_branch} failed: {error}")
+                write_log(log_file, f"Backend git clone failed for branch {candidate_branch}: {error}")
+            finally:
+                if not backend_repo_exists(remote_path) and remote_path.exists():
+                    shutil.rmtree(remote_path)
+        else:
+            remote_errors.append("git not found")
+            write_log(log_file, "Git not found in PATH; trying backend archive download.")
+
+        archive_plan = BackendSourcePlan(
+            local_path=remote_path,
+            git_url=SHINDEN_API_GIT_URL,
+            archive_url=backend_archive_url_for_branch(candidate_branch),
+            needs_clone=True,
+        )
+        try:
+            fetch_backend_archive(
+                archive_plan,
+                archive_downloader=archive_downloader or download_backend_archive,
+                log_file=log_file,
+            )
+            if backend_repo_exists(remote_path):
+                return PreparedBackendSource(
+                    path=remote_path,
+                    branch=candidate_branch,
+                    is_local_fallback=False,
+                    temporary_root=temp_root,
+                )
+            remote_errors.append(
+                f"archive download for {candidate_branch} finished but Cargo.toml is missing at {remote_path}"
+            )
+        except Exception as error:
+            remote_errors.append(f"archive download for {candidate_branch} failed: {error}")
+            write_log(log_file, f"Backend archive download failed for branch {candidate_branch}: {error}")
+            if remote_path.exists():
+                shutil.rmtree(remote_path)
+
+    if backend_repo_exists(local_fallback):
+        write_log(log_file, f"Using local backend fallback: {local_fallback}")
+        return PreparedBackendSource(
+            path=local_fallback,
+            branch=requested_branch,
+            is_local_fallback=True,
+            temporary_root=temp_root,
+        )
+
+    raise BuildError(
+        f"Could not prepare backend branch '{requested_branch}'. "
+        f"Remote attempts failed ({'; '.join(remote_errors)}), and local fallback is missing: {local_fallback}"
+    )
+
+
 def validate_archive_members(archive: zipfile.ZipFile) -> None:
     for member in archive.infolist():
         parts = Path(member.filename).parts
@@ -277,6 +448,52 @@ def plan_commands(
         build_command.extend(["--config", str(tauri_config)])
     commands.append(build_command)
     return commands
+
+
+def cargo_manifest_path(root: Path) -> Path:
+    return root / "src-tauri" / "Cargo.toml"
+
+
+def backend_manifest_backup_path(root: Path) -> Path:
+    return root / "logs" / "Cargo.toml.build-exe.bak"
+
+
+def cargo_path_value(path: Path) -> str:
+    return path.resolve().as_posix()
+
+
+def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
+    manifest_path = cargo_manifest_path(root)
+    backup_path = backend_manifest_backup_path(root)
+    if backup_path.exists():
+        restore_backend_manifest(root, backup_path)
+
+    original = manifest_path.read_text(encoding="utf-8")
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path.write_text(original, encoding="utf-8")
+
+    dependency_pattern = re.compile(
+        r'(?m)^(\s*shinden-pl-api\s*=\s*\{[^}\n]*path\s*=\s*")[^"]+("[^}\n]*\}\s*)$'
+    )
+    rewritten, replacements = dependency_pattern.subn(
+        lambda match: f"{match.group(1)}{cargo_path_value(backend_path)}{match.group(2)}",
+        original,
+    )
+    if replacements != 1:
+        backup_path.unlink(missing_ok=True)
+        raise BuildError(f"Could not find exactly one shinden-pl-api path dependency in {manifest_path}")
+
+    manifest_path.write_text(rewritten, encoding="utf-8")
+    return backup_path
+
+
+def restore_backend_manifest(root: Path, backup_path: Path | None = None) -> None:
+    manifest_backup = backup_path or backend_manifest_backup_path(root)
+    if not manifest_backup.exists():
+        return
+
+    cargo_manifest_path(root).write_text(manifest_backup.read_text(encoding="utf-8"), encoding="utf-8")
+    manifest_backup.unlink()
 
 
 def write_local_tauri_config(root: Path) -> Path:
@@ -462,6 +679,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bootstrap", action="store_true", help="Install missing system build tools with winget and exit.")
     parser.add_argument("--yes", action="store_true", help="Accept winget source/package agreements during bootstrap.")
     parser.add_argument(
+        "--backend-branch",
+        default="Main",
+        help="Backend branch to download for the EXE build. Use Main to try main and then master.",
+    )
+    parser.add_argument(
         "--updater-artifacts",
         action="store_true",
         help="Create signed updater artifacts. Requires TAURI_SIGNING_PRIVATE_KEY.",
@@ -490,9 +712,11 @@ def main(
 
         preflight_result = preflight(tool_lookup=tool_lookup)
         write_log(log_file, preflight_result.summary())
-        backend_plan = plan_backend_source(root)
-        for line in backend_source_log_lines(backend_plan):
-            write_log(log_file, line)
+        selected_backend_branch = args.backend_branch or "Main"
+        remote_backend_path = backend_source_temp_root(root) / SHINDEN_API_REPO_DIR
+        write_log(log_file, f"Backend branch: {selected_backend_branch}")
+        write_log(log_file, f"Remote backend build source: {remote_backend_path}")
+        write_log(log_file, f"Local backend fallback: {default_backend_repo_path(root)}")
 
         if args.preflight:
             return 0 if preflight_result.ok else 1
@@ -531,11 +755,18 @@ def main(
 
         if args.dry_run:
             write_log(log_file, "Dry run only. Planned commands:")
-            if backend_plan.needs_clone:
-                if git := resolve_tool("git", tool_lookup=tool_lookup):
-                    write_log(log_file, f"  {git} clone {backend_plan.git_url} {backend_plan.local_path}")
-                else:
-                    write_log(log_file, f"  download {backend_plan.archive_url} -> {backend_plan.local_path}")
+            if resolve_tool("git", tool_lookup=tool_lookup):
+                for candidate_branch in backend_branch_download_candidates(selected_backend_branch):
+                    write_log(
+                        log_file,
+                        f"  git clone --branch {candidate_branch} --single-branch {SHINDEN_API_GIT_URL} {remote_backend_path}",
+                    )
+            for candidate_branch in backend_branch_download_candidates(selected_backend_branch):
+                write_log(
+                    log_file,
+                    f"  download {backend_archive_url_for_branch(candidate_branch)} -> {remote_backend_path}",
+                )
+            write_log(log_file, f"  fallback local backend: {default_backend_repo_path(root)}")
             for command in commands:
                 write_log(log_file, f"  {' '.join(command)}")
             return 0
@@ -543,25 +774,42 @@ def main(
         if args.clean:
             clean_dist(root, dist_dir)
 
-        ensure_backend_source(backend_plan, cwd=root, env=env, log_file=log_file, tool_lookup=tool_lookup)
+        manifest_backup: Path | None = None
+        try:
+            prepared_backend = prepare_backend_source(
+                root,
+                branch=selected_backend_branch,
+                log_file=log_file,
+                tool_lookup=tool_lookup,
+            )
+            source_kind = "local fallback" if prepared_backend.is_local_fallback else "remote download"
+            write_log(
+                log_file,
+                f"Backend source prepared from {source_kind}: {prepared_backend.path} (branch {prepared_backend.branch})",
+            )
+            manifest_backup = rewrite_backend_dependency_path(root, prepared_backend.path)
+            write_log(log_file, f"Temporarily pointed Cargo backend dependency at: {prepared_backend.path}")
 
-        for command in commands:
-            run_command(command, cwd=root, env=env, log_file=log_file)
+            for command in commands:
+                run_command(command, cwd=root, env=env, log_file=log_file)
 
-        artifacts = collect_exe_artifacts(root, Path(env["CARGO_TARGET_DIR"]))
-        if not artifacts:
-            raise BuildError("Build finished, but no EXE artifacts were found in src-tauri/target/release.")
+            artifacts = collect_exe_artifacts(root, Path(env["CARGO_TARGET_DIR"]))
+            if not artifacts:
+                raise BuildError("Build finished, but no EXE artifacts were found in src-tauri/target/release.")
 
-        if args.no_copy:
-            write_log(log_file, "EXE artifacts left in place:")
-            for artifact in artifacts:
+            if args.no_copy:
+                write_log(log_file, "EXE artifacts left in place:")
+                for artifact in artifacts:
+                    write_log(log_file, f"  {artifact}")
+                return 0
+
+            copied = copy_artifacts(artifacts, dist_dir)
+            write_log(log_file, "Copied EXE artifacts:")
+            for artifact in copied:
                 write_log(log_file, f"  {artifact}")
-            return 0
-
-        copied = copy_artifacts(artifacts, dist_dir)
-        write_log(log_file, "Copied EXE artifacts:")
-        for artifact in copied:
-            write_log(log_file, f"  {artifact}")
+        finally:
+            restore_backend_manifest(root, manifest_backup)
+            clean_backend_source_temp(root)
 
     return 0
 
