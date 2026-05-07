@@ -1,57 +1,119 @@
-name: 'publish'
+name: release
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to build, for example app-v4.0.4"
+        required: true
+      backend_ref:
+        description: "Backend branch/tag to build with. Main tries main, then master."
+        required: false
+        default: "Main"
+
+permissions:
+  contents: write
 
 jobs:
-  publish-tauri:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
-          - platform: 'ubuntu-22.04'
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
+  build-windows-updater:
+    name: Build Windows installer and updater files
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag_name }}
+      BACKEND_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.backend_ref || vars.SHINDEN_BACKEND_REF || 'Main' }}
 
-    runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout frontend
+        uses: actions/checkout@v4
 
-      - name: setup node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Apply release version
+        shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          $tag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "Release tag is required."
+          }
 
-      - name: install frontend dependencies
-        run: npm install
+          $version = $tag -replace '^app-v', '' -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$') {
+            throw "Release tag '$tag' does not contain a valid semantic version."
+          }
 
-      - uses: tauri-apps/tauri-action@v0
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $tauriConfigPath = "src-tauri/tauri.conf.json"
+          $tauriConfig = Get-Content $tauriConfigPath -Raw | ConvertFrom-Json
+          $tauriConfig.version = $version
+          $tauriConfig | ConvertTo-Json -Depth 100 | Set-Content $tauriConfigPath -Encoding utf8
+
+          $cargoManifestPath = "src-tauri/Cargo.toml"
+          $cargoManifest = Get-Content $cargoManifestPath -Raw
+          $cargoManifest = $cargoManifest -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$version`""
+          Set-Content $cargoManifestPath $cargoManifest -Encoding utf8
+
+      - name: Checkout backend API
+        shell: pwsh
+        run: |
+          $repo = "https://github.com/NefilimPL/shinden-pl-api-rs.git"
+          $destination = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) "shinden-pl-api-rs"
+          $requestedRef = if ([string]::IsNullOrWhiteSpace($env:BACKEND_REF)) { "Main" } else { $env:BACKEND_REF }
+          $candidates = if ($requestedRef -eq "Main") { @("main", "master") } else { @($requestedRef) }
+
+          foreach ($candidate in $candidates) {
+            if (Test-Path $destination) {
+              Remove-Item -Recurse -Force $destination
+            }
+
+            git clone --depth 1 --branch $candidate --single-branch $repo $destination
+            if ($LASTEXITCODE -eq 0) {
+              "BACKEND_CHECKOUT_REF=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              break
+            }
+          }
+
+          if (-not (Test-Path (Join-Path $destination "Cargo.toml"))) {
+            throw "Could not checkout backend API from $repo using ref '$requestedRef'."
+          }
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Validate updater signing secrets
+        shell: pwsh
         env:
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "Missing repository secret TAURI_SIGNING_PRIVATE_KEY."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            throw "Missing repository secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
+          }
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SHINDEN_BUILD_PROJECT_ROOT: ${{ github.workspace }}
         with:
-          tagName: app-v__VERSION__
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          releaseId: ${{ github.event.release.id }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "Shinden Client v__VERSION__"
+          releaseBody: "Windows installer and updater manifest generated automatically."
+          releaseDraft: false
+          prerelease: ${{ github.event.release.prerelease || false }}

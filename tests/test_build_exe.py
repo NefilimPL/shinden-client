@@ -48,6 +48,19 @@ class BuildExePlanTests(unittest.TestCase):
         self.assertNotIn("BOOTSTRAP_STAMP", contents)
         self.assertNotIn(".generator-exe-bootstrap-ok", contents)
 
+    def test_launcher_prompts_for_backend_branch(self):
+        launcher = Path(__file__).resolve().parents[1] / "generator_exe.bat"
+
+        contents = launcher.read_text(encoding="utf-8")
+
+        self.assertIn("call :select_backend_branch", contents)
+        self.assertIn(":select_backend_branch", contents)
+        self.assertIn("--list-backend-branches", contents)
+        self.assertNotIn("git ls-remote --heads", contents)
+        self.assertIn("--backend-branch", contents)
+        self.assertIn("Main", contents)
+        self.assertIn("dev", contents)
+
     def test_bootstrap_wrapper_can_force_bootstrap_explicitly(self):
         launcher = Path(__file__).resolve().parents[1] / "bootstrap-exe.bat"
 
@@ -155,6 +168,63 @@ class BuildExePlanTests(unittest.TestCase):
         self.assertEqual(
             build_exe.resolve_tool("npm", tool_lookup=paths.get),
             paths["npm.cmd"],
+        )
+
+    def test_parse_args_accepts_backend_branch(self):
+        args = build_exe.parse_args(["--backend-branch", "dev"])
+
+        self.assertEqual(args.backend_branch, "dev")
+
+    def test_backend_branch_helpers(self):
+        branches = build_exe.normalize_backend_branches(
+            [
+                "origin/main",
+                "origin/dev",
+                "origin/HEAD -> origin/main",
+                "feature/local-cache",
+                "main",
+            ]
+        )
+
+        self.assertEqual(branches, ["main", "dev", "feature/local-cache"])
+        self.assertEqual(build_exe.resolve_backend_branch_choice("Main", ["master"]), "master")
+        self.assertEqual(build_exe.resolve_backend_branch_choice("Main", ["main"]), "main")
+        self.assertEqual(build_exe.resolve_backend_branch_choice("dev", ["main", "dev"]), "dev")
+        self.assertEqual(build_exe.backend_branch_download_candidates("Main"), ["main", "master"])
+        self.assertEqual(build_exe.backend_branch_download_candidates("dev"), ["dev"])
+        self.assertEqual(
+            build_exe.backend_archive_url_for_branch("dev"),
+            "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/dev.zip",
+        )
+
+    def test_backend_source_temp_root_does_not_use_frontend_build_output(self):
+        root = Path("C:/project")
+
+        temp_root = build_exe.backend_source_temp_root(root)
+
+        self.assertEqual(temp_root, root / "cache" / "backend-source")
+        self.assertNotEqual(temp_root.parts[len(root.parts)], "build")
+
+    def test_fetch_remote_backend_branches_uses_github_api_without_git(self):
+        payload = json.dumps(
+            [
+                {"name": "master"},
+                {"name": "dev"},
+                {"name": "feature/api"},
+            ]
+        ).encode("utf-8")
+        requested_urls = []
+
+        def fake_json_downloader(url):
+            requested_urls.append(url)
+            return payload
+
+        branches = build_exe.fetch_remote_backend_branches(json_downloader=fake_json_downloader)
+
+        self.assertEqual(branches, ["master", "dev", "feature/api"])
+        self.assertEqual(
+            requested_urls,
+            ["https://api.github.com/repos/NefilimPL/shinden-pl-api-rs/branches?per_page=100"],
         )
 
     def test_winget_bootstrap_commands_install_missing_packages(self):
@@ -315,6 +385,106 @@ class BuildExePlanTests(unittest.TestCase):
             self.assertEqual(downloads[0][0], "https://github.com/NefilimPL/shinden-pl-api-rs/archive/refs/heads/master.zip")
             self.assertTrue((plan.local_path / "Cargo.toml").is_file())
 
+    def test_prepare_backend_source_downloads_selected_branch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+            commands = []
+
+            def fake_runner(command, *, cwd, env, log_file):
+                commands.append((command, cwd, env))
+                backend_path = root / "cache" / "backend-source" / "shinden-pl-api-rs"
+                backend_path.mkdir(parents=True)
+                (backend_path / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
+
+            source = build_exe.prepare_backend_source(
+                root,
+                branch="dev",
+                log_file=io.StringIO(),
+                command_runner=fake_runner,
+                git_command="git",
+            )
+
+            self.assertEqual(source.path, root / "cache" / "backend-source" / "shinden-pl-api-rs")
+            self.assertEqual(source.branch, "dev")
+            self.assertFalse(source.is_local_fallback)
+            self.assertEqual(
+                commands,
+                [
+                    (
+                        [
+                            "git",
+                            "clone",
+                            "--branch",
+                            "dev",
+                            "--single-branch",
+                            "https://github.com/NefilimPL/shinden-pl-api-rs.git",
+                            str(source.path),
+                        ],
+                        root,
+                        os.environ.copy(),
+                    )
+                ],
+            )
+
+    def test_prepare_backend_source_uses_local_fallback_when_remote_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+            local_backend = root.parent / "shinden-pl-api-rs"
+            local_backend.mkdir()
+            (local_backend / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
+
+            def failing_runner(command, *, cwd, env, log_file):
+                raise build_exe.BuildError("clone failed")
+
+            def failing_downloader(url, destination):
+                raise OSError("archive failed")
+
+            source = build_exe.prepare_backend_source(
+                root,
+                branch="dev",
+                log_file=io.StringIO(),
+                command_runner=failing_runner,
+                git_command="git",
+                archive_downloader=failing_downloader,
+            )
+
+            self.assertEqual(source.path, local_backend)
+            self.assertEqual(source.branch, "dev")
+            self.assertTrue(source.is_local_fallback)
+
+    def test_backend_manifest_rewrite_and_restore(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            manifest = root / "src-tauri" / "Cargo.toml"
+            backend_path = root / "cache" / "backend-source" / "shinden-pl-api-rs"
+            manifest.parent.mkdir(parents=True)
+            backend_path.mkdir(parents=True)
+            original = "\n".join(
+                [
+                    "[dependencies]",
+                    'tauri = { version = "2" }',
+                    'shinden-pl-api = { path = "../../shinden-pl-api-rs" }',
+                    'serde_json = "1"',
+                    "",
+                ]
+            )
+            manifest.write_text(original, encoding="utf-8")
+
+            backup_path = build_exe.rewrite_backend_dependency_path(root, backend_path)
+
+            rewritten = manifest.read_text(encoding="utf-8")
+            self.assertIn(f'shinden-pl-api = {{ path = "{backend_path.as_posix()}" }}', rewritten)
+            self.assertIn('serde_json = "1"', rewritten)
+            self.assertEqual(backup_path, root / "logs" / "Cargo.toml.build-exe.bak")
+            self.assertEqual(backup_path.read_text(encoding="utf-8"), original)
+
+            build_exe.restore_backend_manifest(root, backup_path)
+
+            self.assertEqual(manifest.read_text(encoding="utf-8"), original)
+            self.assertFalse(backup_path.exists())
+
     def test_preflight_does_not_fail_when_backend_needs_github_archive_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "shinden-client"
@@ -326,6 +496,22 @@ class BuildExePlanTests(unittest.TestCase):
             )
 
             self.assertEqual(exit_code, 0)
+
+    def test_dry_run_logs_selected_backend_branch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+
+            exit_code = build_exe.main(
+                ["--dry-run", "--backend-branch", "dev", "--skip-install", "--no-copy"],
+                root_override=root,
+                tool_lookup=lambda name: f"C:/tools/{name}.exe",
+            )
+
+            log_text = (root / "logs" / "build-exe.log").read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Backend branch: dev", log_text)
+            self.assertIn("git clone --branch dev --single-branch", log_text)
 
     def test_run_command_can_accept_winget_existing_package_exit(self):
         log = io.StringIO()

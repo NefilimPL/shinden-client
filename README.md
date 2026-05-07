@@ -44,7 +44,7 @@ Problem wynika bezpośrednio z działania WebKitGTK wewnątrz frameworka Tauri. 
 
 ## Licencja i wyłączenie odpowiedzialności
 
-MIT © 2025 Błażej Drozd
+MIT © 2025 Błażej Drozd, NefilimPL
 
 Projekt Shinden Client nie jest powiązany z serwisem Shinden.pl. Aplikacja nie hostuje ani nie redystrybuuje treści objętych prawem autorskim. Służy wyłącznie jako alternatywny interfejs użytkownika.
 
