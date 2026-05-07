@@ -41,6 +41,9 @@
 <div class="flex flex-col items-center gap-2 py-2">
     <h2 class="text-center text-lg">Aktualizacje</h2>
     <div class="badge badge-dash w-96">{status.statusMessage}</div>
+    <div class="text-xs opacity-70">
+        Aktualizacje z <a href="https://github.com/NefilimPL/shinden-client/releases/latest" class="link" target="_blank">NefilimPL/shinden-client</a>
+    </div>
     <div class="join">
         <button class="btn join-item" onclick={checkForUpdates}>Sprawdź dostępność</button>
         <button class="btn join-item" disabled={!(status.updateState===UpdateState.AVAILABLE)} onclick={getAndinstallUpdate}>Pobierz i zainstaluj</button>
@@ -84,5 +87,6 @@
 <div class="bg-base-200 p-4 rounded-lg mx-auto w-fit text-center shadow-md">
     Made with ❤️ by
     <a href="https://github.com/Tsugumik" class="link" target="_blank">Błażej Drozd</a>
+    &
+    <a href="https://github.com/NefilimPL" class="link" target="_blank">NefilimPL</a>
 </div>
-
