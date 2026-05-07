@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCNDA0QkM5ODAwNzhDNUUKUldSZWpBZUF5VXRBU3lMaUs4cVNuY2JRdURTdHhsOVY2ZHdiZWN5cWdDeUl1RzB1SzJsZXJXL0sK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERFQzRBOUU2QUY4NzBBMkMKUldRc0NvZXY1cW5FM2xxeWlKNHZHMGVZRzhTV2NFS21LU0VQZ0xpMnJZai90T0gwNDVwUFVGRFIK",
       "endpoints": [
         "https://github.com/NefilimPL/shinden-client/releases/latest/download/latest.json"
       ]
