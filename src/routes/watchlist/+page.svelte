@@ -2,11 +2,12 @@
     import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
-    import type { AnimeWatchStatus, WatchingAnime } from "$lib/types";
+    import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";
     import { globalStates, LoadingState, params } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
+    import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import {
         watchlistSettingsStorageKey,
         type WatchingCacheRefreshStatus,
@@ -49,9 +50,12 @@
     let lastSeenRefreshFinishedAtMs: number | null = $state(null);
     let refreshStatusInitialized = $state(false);
     let silentReloadInProgress = $state(false);
+    let viewMode: AnimeListViewMode = $state("list");
+    const viewModeStorageKey = "shinden:watchlist-view-mode";
 
     onMount(() => {
         loadSettings();
+        loadViewMode();
         void loadWatchingAnime();
         void pollRefreshStatus();
 
@@ -63,6 +67,18 @@
             window.clearInterval(statusTimer);
         };
     });
+
+    function loadViewMode() {
+        const stored = localStorage.getItem(viewModeStorageKey);
+        if (stored === "grid" || stored === "list") {
+            viewMode = stored;
+        }
+    }
+
+    function setViewMode(value: AnimeListViewMode) {
+        viewMode = value;
+        localStorage.setItem(viewModeStorageKey, value);
+    }
 
     function loadSettings() {
         const storedSettings = localStorage.getItem(watchlistSettingsStorageKey);
@@ -386,10 +402,13 @@
                         </g>
                     </svg>
                 </button>
+
+                <AnimeListViewToggle value={viewMode} onChange={setViewMode} />
             </div>
         </div>
 
         {#if result.length > 0}
+        {#if viewMode === "list"}
         <ul class="list bg-base-100 rounded-box shadow-md">
             {#each result as anime}
                 <li class="list-row flex items-center justify-between">
@@ -438,6 +457,67 @@
                 </li>
             {/each}
         </ul>
+        {:else}
+            <section class="bg-base-100 rounded-box shadow-md p-4">
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                    {#each result as anime}
+                        <article class="flex min-w-0 flex-col overflow-hidden rounded-lg bg-base-200 shadow-sm">
+                            <button
+                                type="button"
+                                data-debug-url={anime.url}
+                                class="text-left"
+                                onclick={async () => { await handleButton(anime); }}
+                            >
+                                <img
+                                    class="aspect-[2/3] w-full object-cover"
+                                    src={anime.image_url}
+                                    alt={anime.name}
+                                />
+                                <div class="flex min-h-32 flex-col gap-1 p-3">
+                                    <div class="line-clamp-2 text-sm font-semibold">{anime.name}</div>
+                                    <div class="text-xs uppercase opacity-60">
+                                        {anime.anime_type}
+                                        {#if anime.episodes}
+                                            <span class="normal-case"> | {anime.episodes}</span>
+                                        {/if}
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between gap-2 text-xs">
+                                        <span class="badge badge-sm">{anime.rating || "-"}</span>
+                                        <span class="opacity-70">{anime.watchedEpisodesCount}/{anime.totalEpisodes ?? "?"}</span>
+                                    </div>
+                                </div>
+                            </button>
+
+                            <div class="flex items-center gap-1 border-t border-base-content/10 p-2">
+                                <select
+                                    class="select select-bordered select-xs min-w-0 flex-1"
+                                    value={anime.watchStatus}
+                                    disabled={statusUpdateInProgress === anime.titleId}
+                                    aria-label="status anime"
+                                    onchange={(event) => { void handleStatusChange(anime, event); }}
+                                >
+                                    {#each animeStatusOptions as option}
+                                        <option value={option.value}>{option.label}</option>
+                                    {/each}
+                                </select>
+                                <button
+                                    data-debug-url={anime.url}
+                                    class="btn btn-square btn-ghost btn-sm"
+                                    aria-label="episodes"
+                                    onclick={async () => { await handleButton(anime); }}
+                                >
+                                    <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                        <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
+                                            <path d="M6 3L20 12 6 21 6 3z"></path>
+                                        </g>
+                                    </svg>
+                                </button>
+                            </div>
+                        </article>
+                    {/each}
+                </div>
+            </section>
+        {/if}
         {:else}
             <Empty />
         {/if}

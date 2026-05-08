@@ -1,19 +1,23 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
     import {onMount} from "svelte";
-    import type {AnimeWatchStatus, SearchAnime} from "$lib/types";
+    import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
+    import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     globalStates.loadingState = LoadingState.LOADING;
 
     let result: Array<SearchAnime> = $state([]);
     let statusUpdateInProgress: number | null = $state(null);
+    let viewMode: AnimeListViewMode = $state("list");
+    const viewModeStorageKey = "shinden:search-view-mode";
 
     onMount(async () => {
         try {
+            loadViewMode();
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
             result = await invoke<SearchAnime[]>("search", {
@@ -39,6 +43,18 @@
             log(LogLevel.ERROR, `Error searching anime: ${params.animeName}`);
         }
     })
+
+    function loadViewMode() {
+        const stored = localStorage.getItem(viewModeStorageKey);
+        if (stored === "grid" || stored === "list") {
+            viewMode = stored;
+        }
+    }
+
+    function setViewMode(value: AnimeListViewMode) {
+        viewMode = value;
+        localStorage.setItem(viewModeStorageKey, value);
+    }
 
     function statusTitleId(anime: SearchAnime) {
         return anime.titleId ?? titleIdFromSeriesUrl(anime.url);
@@ -99,7 +115,12 @@
 
     {#if result.length > 0}
 
-    <div class="flex flex-col h-full w-full overflow-y-scroll">
+    <div class="flex flex-col h-full w-full overflow-y-scroll gap-3 p-4">
+        <div class="flex justify-end">
+            <AnimeListViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+
+        {#if viewMode === "list"}
         <ul class="list bg-base-100 rounded-box shadow-md">
 
             <li class="p-4 pb-2 text-xs opacity-60 tracking-wide">Wyniki wyszukiwania:</li>
@@ -140,6 +161,66 @@
                 </li>
             {/each}
         </ul>
+        {:else}
+            <section class="bg-base-100 rounded-box shadow-md p-4">
+                <div class="pb-3 text-xs opacity-60 tracking-wide">Wyniki wyszukiwania:</div>
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                    {#each result as anime}
+                        <article class="flex min-w-0 flex-col overflow-hidden rounded-lg bg-base-200 shadow-sm">
+                            <button
+                                type="button"
+                                data-debug-url={anime.url}
+                                class="text-left"
+                                disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
+                                onclick={async () => { await handleButton(anime); }}
+                            >
+                                <img
+                                    class="aspect-[2/3] w-full object-cover"
+                                    src={anime.image_url}
+                                    alt={anime.name}
+                                />
+                                <div class="flex min-h-28 flex-col gap-1 p-3">
+                                    <div class="line-clamp-2 text-sm font-semibold">{anime.name}</div>
+                                    <div class="text-xs uppercase opacity-60">{anime.anime_type}</div>
+                                    <div class="mt-auto flex items-center justify-between gap-2">
+                                        <span class="badge badge-sm">{anime.rating || "-"}</span>
+                                        {#if anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
+                                            <span class="badge badge-warning badge-sm">Login</span>
+                                        {/if}
+                                    </div>
+                                </div>
+                            </button>
+
+                            <div class="flex items-center gap-1 border-t border-base-content/10 p-2">
+                                {#if globalStates.user.name !== null && statusTitleId(anime)}
+                                    <select
+                                        class="select select-bordered select-xs min-w-0 flex-1"
+                                        value={anime.watchStatus}
+                                        disabled={statusUpdateInProgress === statusTitleId(anime)}
+                                        aria-label="status anime"
+                                        onchange={(event) => { void handleStatusChange(anime, event); }}
+                                    >
+                                        <option value="no">Brak statusu</option>
+                                        {#each animeStatusOptions as option}
+                                            <option value={option.value}>{option.label}</option>
+                                        {/each}
+                                    </select>
+                                {/if}
+                                <button
+                                    data-debug-url={anime.url}
+                                    class="btn btn-square btn-ghost btn-sm"
+                                    aria-label="play"
+                                    disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
+                                    onclick={async () => { await handleButton(anime); }}
+                                >
+                                    <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
+                                </button>
+                            </div>
+                        </article>
+                    {/each}
+                </div>
+            </section>
+        {/if}
     </div>
     {:else}
         <Empty />

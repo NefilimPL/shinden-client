@@ -22,6 +22,10 @@
     let unknown: string[] = $state([]);
     let builtIn: string[] = $state([]);
 
+    function currentEpisode() {
+        return params.episodeProgress[params.currentEpisodeIndex] ?? null;
+    }
+
     onMount(async ()=>{
        try {
            globalStates.loadingState = LoadingState.LOADING;
@@ -81,6 +85,14 @@
     </div>
 {:else if globalStates.loadingState === LoadingState.OK}
     {#if players.length > 0}
+        {#if currentEpisode()}
+            <section class="mx-4 mt-4 rounded-box bg-base-300 px-4 py-3 shadow-md">
+                <div class="text-xs uppercase tracking-wide opacity-60">Odcinek</div>
+                <h1 class="text-lg font-semibold">
+                    {currentEpisode()?.episodeNo}. {currentEpisode()?.title || "Brak nazwy odcinka"}
+                </h1>
+            </section>
+        {/if}
         <Players keys={builtIn} group={grouped}>
             <BuiltIn /> <Secure />
         </Players>

@@ -1,10 +1,11 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
-    import type { DiscoveryAnime, SeasonOption, SeasonSlug } from "$lib/types";
+    import type { AnimeListViewMode, DiscoveryAnime, SeasonOption, SeasonSlug } from "$lib/types";
     import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import DiscoveryAnimeList from "$lib/DiscoveryAnimeList.svelte";
+    import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
 
     const seasonOptions: SeasonOption[] = [
         { value: "current", label: "Obecny sezon" },
@@ -18,10 +19,25 @@
     let season: SeasonSlug = $state(defaultSeasonSlug());
     let result: DiscoveryAnime[] = $state([]);
     let loading = $state(false);
+    let viewMode: AnimeListViewMode = $state("list");
+    const viewModeStorageKey = "shinden:season-view-mode";
 
     onMount(() => {
+        loadViewMode();
         void loadSeasonAnime();
     });
+
+    function loadViewMode() {
+        const stored = localStorage.getItem(viewModeStorageKey);
+        if (stored === "grid" || stored === "list") {
+            viewMode = stored;
+        }
+    }
+
+    function setViewMode(value: AnimeListViewMode) {
+        viewMode = value;
+        localStorage.setItem(viewModeStorageKey, value);
+    }
 
     function defaultSeasonSlug(): SeasonSlug {
         const month = new Date().getMonth() + 1;
@@ -87,6 +103,10 @@
             >
                 Wczytaj
             </button>
+
+            <div class="ml-auto">
+                <AnimeListViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
         </div>
     </section>
 
@@ -101,6 +121,7 @@
             items={result}
             heading="Anime sezonowe:"
             emptyLabel="Nie znaleziono anime dla wybranego sezonu."
+            viewMode={viewMode}
         />
     {/if}
 </div>

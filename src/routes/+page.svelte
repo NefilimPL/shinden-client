@@ -4,17 +4,21 @@
     import { invoke } from "@tauri-apps/api/core";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { goto } from "$app/navigation";
-    import type { DiscoveryAnime } from "$lib/types";
+    import type { AnimeListViewMode, DiscoveryAnime } from "$lib/types";
     import DiscoveryAnimeList from "$lib/DiscoveryAnimeList.svelte";
+    import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
 
     let animeName: string = $state("");
     let premieres: DiscoveryAnime[] = $state([]);
     let premieresLoading = $state(false);
+    let viewMode: AnimeListViewMode = $state("list");
+    const viewModeStorageKey = "shinden:premieres-view-mode";
 
     globalStates.loadingState = LoadingState.LOADING;
 
     onMount(async () => {
         try {
+            loadViewMode();
             log(LogLevel.INFO, "Testing connection to http://shinden.pl");
             await invoke("test_connection");
             globalStates.loadingState = LoadingState.OK;
@@ -25,6 +29,18 @@
             log(LogLevel.ERROR, "Error connection to http://shinden.pl");
         }
     });
+
+    function loadViewMode() {
+        const stored = localStorage.getItem(viewModeStorageKey);
+        if (stored === "grid" || stored === "list") {
+            viewMode = stored;
+        }
+    }
+
+    function setViewMode(value: AnimeListViewMode) {
+        viewMode = value;
+        localStorage.setItem(viewModeStorageKey, value);
+    }
 
     async function loadPremieres() {
         try {
@@ -94,10 +110,14 @@
                 <div class="skeleton h-24 w-full"></div>
             </div>
         {:else}
+            <div class="flex justify-end">
+                <AnimeListViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
             <DiscoveryAnimeList
                 items={premieres}
                 heading="Nowosci z Shinden:"
                 emptyLabel="Nie znaleziono nowosci na stronie glownej Shinden."
+                viewMode={viewMode}
             />
         {/if}
     </div>

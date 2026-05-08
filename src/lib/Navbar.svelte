@@ -46,6 +46,9 @@
         <button class="btn btn-circle btn-sm" onclick={() => getCurrentWindow().minimize()}>
             —
         </button>
+        <button class="btn btn-circle btn-sm" title="Maksymalizuj" onclick={() => getCurrentWindow().toggleMaximize()}>
+            &#x25A1;
+        </button>
         <button class="btn btn-circle btn-sm" onclick={() => getCurrentWindow().close()}>
             &#x2715;
         </button>

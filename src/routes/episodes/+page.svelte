@@ -2,15 +2,27 @@
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {onMount} from "svelte";
     import {invoke} from "@tauri-apps/api/core";
-    import type {EpisodeProgress} from "$lib/types";
+    import type {
+        AnimeDetails,
+        AnimeRatingKey,
+        AnimeRatingUpdate,
+        AnimeWatchStatus,
+        EpisodeProgress,
+        RelatedSeries,
+    } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
+    import AnimeDetailsPanel from "$lib/AnimeDetailsPanel.svelte";
 
     let episodes: EpisodeProgress[] = $state([]);
     let watchedUpdateInProgress: number | null = $state(null);
+    let details: AnimeDetails | null = $state(null);
+    let detailsLoading = $state(false);
+    let statusUpdateInProgress = $state(false);
+    let ratingInProgress: AnimeRatingKey | null = $state(null);
 
     onMount(async () => {
         await loadEpisodes();
@@ -31,12 +43,112 @@
                 totalEpisodes: params.animeTotalEpisodes,
             });
             params.episodeProgress = episodes;
+            await loadAnimeDetails();
             globalStates.loadingState = LoadingState.OK;
             log(LogLevel.SUCCESS, "Loaded episodes successfully");
         } catch (e) {
             globalStates.loadingState = LoadingState.ERROR;
             log(LogLevel.ERROR, `Error getting episodes: ${e}`);
         }
+    }
+
+    async function loadAnimeDetails() {
+        if (!params.seriesUrl) {
+            details = null;
+            return;
+        }
+
+        try {
+            detailsLoading = true;
+            details = await invoke<AnimeDetails>("get_anime_details", {
+                url: params.seriesUrl,
+            });
+            if (!params.titleId && details.titleId) {
+                params.titleId = details.titleId;
+            }
+        } catch (e) {
+            details = null;
+            log(LogLevel.WARNING, `Nie udalo sie zaladowac szczegolow anime: ${e}`);
+        } finally {
+            detailsLoading = false;
+        }
+    }
+
+    async function updateAnimeStatus(status: AnimeWatchStatus) {
+        const titleId = params.titleId;
+        if (!titleId || params.animeWatchStatus === status) {
+            return;
+        }
+
+        try {
+            statusUpdateInProgress = true;
+            await invoke("update_anime_status", {
+                titleId,
+                status,
+                isFavourite: params.animeIsFavourite,
+            });
+            params.animeWatchStatus = status;
+            log(LogLevel.SUCCESS, "Zmieniono status anime");
+        } catch (e) {
+            log(LogLevel.ERROR, `Nie udalo sie zapisac statusu anime: ${e}`);
+        } finally {
+            statusUpdateInProgress = false;
+        }
+    }
+
+    async function updateAnimeRating(ratingType: AnimeRatingKey, value: number) {
+        if (!details || !params.titleId) {
+            return;
+        }
+
+        const previousValue = details.userRatings[ratingType];
+        try {
+            ratingInProgress = ratingType;
+            const update: AnimeRatingUpdate = {
+                titleId: params.titleId,
+                titleType: details.titleType || "anime",
+                ratingType,
+                value,
+            };
+            await invoke("update_anime_rating", { update });
+            details.userRatings = {
+                ...details.userRatings,
+                [ratingType]: value,
+            };
+            details = { ...details };
+            log(LogLevel.SUCCESS, "Zapisano ocene anime");
+        } catch (e) {
+            if (details) {
+                details.userRatings = {
+                    ...details.userRatings,
+                    [ratingType]: previousValue,
+                };
+                details = { ...details };
+            }
+            log(LogLevel.ERROR, `Nie udalo sie zapisac oceny anime: ${e}`);
+        } finally {
+            ratingInProgress = null;
+        }
+    }
+
+    async function openRelatedSeries(series: RelatedSeries) {
+        const titleId = titleIdFromSeriesUrl(series.url);
+        if (!titleId) {
+            return;
+        }
+
+        params.seriesUrl = series.url;
+        params.titleId = titleId;
+        params.animeWatchStatus = "no";
+        params.animeIsFavourite = 0;
+        params.animeTotalEpisodes = null;
+        params.episodeProgress = [];
+        params.currentEpisodeIndex = -1;
+        await loadEpisodes();
+    }
+
+    function currentWatchStatus(): AnimeWatchStatus {
+        return params.animeWatchStatus || "no";
     }
 
     async function setEpisodeWatched(episode: EpisodeProgress, watched: boolean) {
@@ -86,8 +198,23 @@
         <div class="skeleton h-32 w-full"></div>
     </div>
 {:else if globalStates.loadingState === LoadingState.OK}
+    <div class="flex flex-col h-full w-full overflow-y-scroll gap-4 p-4">
+        {#if detailsLoading}
+            <div class="skeleton h-64 w-full"></div>
+        {:else if details}
+            <AnimeDetailsPanel
+                {details}
+                watchStatus={currentWatchStatus()}
+                canEdit={globalStates.user.name !== null}
+                statusDisabled={statusUpdateInProgress}
+                {ratingInProgress}
+                onStatusChange={(status) => { void updateAnimeStatus(status); }}
+                onRatingChange={(ratingType, value) => { void updateAnimeRating(ratingType, value); }}
+                onOpenRelated={(series) => { void openRelatedSeries(series); }}
+            />
+        {/if}
+
     {#if episodes.length > 0}
-    <div class="flex flex-col h-full w-full overflow-y-scroll">
         <ul class="list bg-base-100 rounded-box shadow-md">
 
             <li class="p-4 pb-2 text-xs opacity-60 tracking-wide">Lista odcinków:</li>
@@ -123,8 +250,8 @@
                 </li>
             {/each}
         </ul>
-    </div>
     {:else}
         <Empty />
     {/if}
+    </div>
 {/if}

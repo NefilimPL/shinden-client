@@ -175,11 +175,22 @@
     });
 </script>
 
-<div class="h-full w-full flex items-center justify-center">
+<div class="h-full w-full flex flex-col">
     {#if globalStates.loadingState === LoadingState.LOADING}
-        <span class="loading loading-ring loading-xl"></span>
+        <div class="flex flex-1 items-center justify-center">
+            <span class="loading loading-ring loading-xl"></span>
+        </div>
     {:else if globalStates.loadingState === LoadingState.OK}
+            {#if currentEpisode()}
+                <section class="mx-4 mt-4 shrink-0 rounded-box bg-base-300 px-4 py-3 shadow-md">
+                    <div class="text-xs uppercase tracking-wide opacity-60">Odcinek</div>
+                    <h1 class="text-lg font-semibold">
+                        {currentEpisode()?.episodeNo}. {currentEpisode()?.title || "Brak nazwy odcinka"}
+                    </h1>
+                </section>
+            {/if}
 
+            <div class="min-h-0 flex-1 flex items-center justify-center">
             {#if isBuiltIn}
             <div class="w-full h-full p-4 pb-28 md:p-6 md:pb-28 flex flex-col items-center justify-center gap-4">
                 <div class="w-full flex-1 flex items-center justify-center min-h-0">
@@ -215,6 +226,7 @@
                 </div>
             </div>
             {/if}
+            </div>
 
             {#if currentEpisode()}
                 <div class="fixed bottom-4 left-4 right-4 z-20 flex flex-col sm:flex-row items-center justify-center gap-2 rounded-box bg-base-300/95 border border-base-content/10 p-3 shadow-xl">
