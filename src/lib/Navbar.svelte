@@ -23,9 +23,10 @@
         await getCurrentWindow().minimize();
     }
 
-    async function toggleMaximizeWindow() {
+    async function toggleFullscreenWindow() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await getCurrentWindow().toggleMaximize();
+        const appWindow = getCurrentWindow();
+        await appWindow.setFullscreen(!(await appWindow.isFullscreen()));
     }
 
     async function closeWindow() {
@@ -60,7 +61,7 @@
         <button class="btn btn-circle btn-sm" onclick={() => { void minimizeWindow(); }}>
             —
         </button>
-        <button class="btn btn-circle btn-sm" title="Maksymalizuj" onclick={() => { void toggleMaximizeWindow(); }}>
+        <button class="btn btn-circle btn-sm" title="Pelny ekran" onclick={() => { void toggleFullscreenWindow(); }}>
             &#x25A1;
         </button>
         <button class="btn btn-circle btn-sm" onclick={() => { void closeWindow(); }}>
