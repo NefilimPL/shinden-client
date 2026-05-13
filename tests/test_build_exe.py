@@ -122,6 +122,10 @@ class BuildExePlanTests(unittest.TestCase):
 
             self.assertEqual(config_path, root / "logs" / "tauri-local-build.conf.json")
             contents = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(contents["version"], "0.0.0")
+            self.assertRegex(contents["version"], r"^\d+\.\d+\.\d+$")
+            self.assertEqual(contents["productName"], "Shinden Client Dev")
+            self.assertEqual(contents["identifier"], "com.blazejdrozd.shinden-client-rs.dev")
             self.assertEqual(contents["bundle"]["createUpdaterArtifacts"], False)
 
     def test_project_environment_points_logs_at_project_root(self):
@@ -463,6 +467,10 @@ class BuildExePlanTests(unittest.TestCase):
             backend_path.mkdir(parents=True)
             original = "\n".join(
                 [
+                    "[package]",
+                    'name = "ShindenClient"',
+                    'version = "4.0.3"',
+                    "",
                     "[dependencies]",
                     'tauri = { version = "2" }',
                     'shinden-pl-api = { path = "../../shinden-pl-api-rs" }',
@@ -475,6 +483,8 @@ class BuildExePlanTests(unittest.TestCase):
             backup_path = build_exe.rewrite_backend_dependency_path(root, backend_path)
 
             rewritten = manifest.read_text(encoding="utf-8")
+            self.assertIn('version = "0.0.0"', rewritten)
+            self.assertNotIn('version = "4.0.3"', rewritten)
             self.assertIn(f'shinden-pl-api = {{ path = "{backend_path.as_posix()}" }}', rewritten)
             self.assertIn('serde_json = "1"', rewritten)
             self.assertEqual(backup_path, root / "logs" / "Cargo.toml.build-exe.bak")

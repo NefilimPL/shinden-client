@@ -82,6 +82,9 @@ export type AnimeDetails = {
     relatedSeries: RelatedSeries[];
     communityRating: AnimeCommunityRating;
     userRatings: AnimeUserRatings;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    userStatusLoaded: boolean;
 };
 
 export type AnimeRatingKey = keyof AnimeUserRatings;

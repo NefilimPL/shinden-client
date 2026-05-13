@@ -35,7 +35,11 @@
     })
 
     onMount(async ()=> {
-        await checkUpdate();
+        try {
+            await checkUpdate();
+        } catch {
+            // The info page shows the detailed updater error.
+        }
     });
 </script>
 
