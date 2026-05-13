@@ -6,6 +6,8 @@ use shinden_pl_api::client_backend::{
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
 
+mod updater_commands;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -215,6 +217,14 @@ async fn get_cda_video(url: String) -> Result<String, String> {
     .map_err(|e| command_error("get_cda_video task", e))?
 }
 
+#[tauri::command]
+async fn install_update_from_manifest(
+    app: tauri::AppHandle,
+    tag: String,
+) -> Result<(), String> {
+    updater_commands::install_update_from_manifest(app, tag).await
+}
+
 fn install_panic_logger() {
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -279,7 +289,8 @@ pub fn run() {
             get_episodes,
             get_players,
             get_iframe,
-            get_cda_video
+            get_cda_video,
+            install_update_from_manifest
         ])
         .run(tauri::generate_context!())
     {
@@ -288,5 +299,26 @@ pub fn run() {
             &format!("error while running tauri application: {error}"),
         );
         panic!("error while running tauri application: {error}");
+    }
+}
+
+#[cfg(test)]
+mod updater_command_tests {
+    use super::updater_commands::{release_manifest_endpoint, release_version_from_tag};
+
+    #[test]
+    fn release_manifest_endpoint_accepts_known_release_tags() {
+        assert_eq!(
+            release_manifest_endpoint("V4.0.5").unwrap(),
+            "https://github.com/NefilimPL/shinden-client/releases/download/V4.0.5/latest.json"
+        );
+        assert_eq!(release_version_from_tag("app-v4.0.3").unwrap(), "4.0.3");
+    }
+
+    #[test]
+    fn release_manifest_endpoint_rejects_invalid_release_tags() {
+        assert!(release_manifest_endpoint("../V4.0.5").is_err());
+        assert!(release_manifest_endpoint("nightly").is_err());
+        assert!(release_manifest_endpoint("").is_err());
     }
 }
