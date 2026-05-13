@@ -122,7 +122,8 @@ class BuildExePlanTests(unittest.TestCase):
 
             self.assertEqual(config_path, root / "logs" / "tauri-local-build.conf.json")
             contents = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(contents["version"], "0.0.0-dev+manual")
+            self.assertEqual(contents["version"], "0.0.0-dev")
+            self.assertNotIn("+", contents["version"])
             self.assertEqual(contents["bundle"]["createUpdaterArtifacts"], False)
 
     def test_project_environment_points_logs_at_project_root(self):

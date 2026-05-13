@@ -523,7 +523,7 @@ def write_local_tauri_config(root: Path) -> Path:
     config_path = root / "logs" / "tauri-local-build.conf.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config = {
-        "version": "0.0.0-dev+manual",
+        "version": "0.0.0-dev",
         "bundle": {
             "createUpdaterArtifacts": False,
         },
