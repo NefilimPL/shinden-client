@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 
+LOCAL_BUILD_VERSION = "0.0.0"
+LOCAL_BUILD_PRODUCT_NAME = "Shinden Client Dev"
+LOCAL_BUILD_IDENTIFIER = "com.blazejdrozd.shinden-client-rs.dev"
+
+
 class BuildError(RuntimeError):
     pass
 
@@ -506,6 +511,18 @@ def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
         backup_path.unlink(missing_ok=True)
         raise BuildError(f"Could not find exactly one shinden-pl-api path dependency in {manifest_path}")
 
+    package_version_pattern = re.compile(
+        r'(?ms)^(\[package\]\s*(?:(?!^\[).)*?^\s*version\s*=\s*")[^"]+(")'
+    )
+    rewritten, version_replacements = package_version_pattern.subn(
+        lambda match: f"{match.group(1)}{LOCAL_BUILD_VERSION}{match.group(2)}",
+        rewritten,
+        count=1,
+    )
+    if version_replacements != 1:
+        backup_path.unlink(missing_ok=True)
+        raise BuildError(f"Could not find package version in {manifest_path}")
+
     manifest_path.write_text(rewritten, encoding="utf-8")
     return backup_path
 
@@ -523,7 +540,9 @@ def write_local_tauri_config(root: Path) -> Path:
     config_path = root / "logs" / "tauri-local-build.conf.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config = {
-        "version": "0.0.0-dev",
+        "productName": LOCAL_BUILD_PRODUCT_NAME,
+        "version": LOCAL_BUILD_VERSION,
+        "identifier": LOCAL_BUILD_IDENTIFIER,
         "bundle": {
             "createUpdaterArtifacts": False,
         },
@@ -820,6 +839,7 @@ def main(
             )
             manifest_backup = rewrite_backend_dependency_path(root, prepared_backend.path)
             write_log(log_file, f"Temporarily pointed Cargo backend dependency at: {prepared_backend.path}")
+            write_log(log_file, f"Temporarily set local package version to: {LOCAL_BUILD_VERSION}")
 
             for command in commands:
                 run_command(command, cwd=root, env=env, log_file=log_file)
