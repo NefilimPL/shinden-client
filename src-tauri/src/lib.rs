@@ -3,6 +3,7 @@ use shinden_pl_api::client_backend::{
     ShindenClientBackend, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
 };
+use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
 
 #[tauri::command]
@@ -49,6 +50,14 @@ async fn get_season_anime(
 }
 
 #[tauri::command]
+async fn get_anime_details(
+    state: tauri::State<'_, ShindenClientBackend>,
+    url: String,
+) -> Result<AnimeDetails, String> {
+    state.get_anime_details(url).await
+}
+
+#[tauri::command]
 async fn get_watching_anime(
     state: tauri::State<'_, ShindenClientBackend>,
     filter: Option<WatchingAnimeFilter>,
@@ -78,6 +87,14 @@ async fn update_anime_status(
     state
         .update_anime_status(title_id, status, is_favourite)
         .await
+}
+
+#[tauri::command]
+async fn update_anime_rating(
+    state: tauri::State<'_, ShindenClientBackend>,
+    update: AnimeRatingUpdate,
+) -> Result<(), String> {
+    state.update_anime_rating(update).await
 }
 
 #[tauri::command]
@@ -245,9 +262,11 @@ pub fn run() {
             search,
             get_main_premieres,
             get_season_anime,
+            get_anime_details,
             get_watching_anime,
             get_episodes_with_progress,
             update_anime_status,
+            update_anime_rating,
             mark_episode_watched,
             mark_episode_unwatched,
             get_watching_cache_refresh_status,

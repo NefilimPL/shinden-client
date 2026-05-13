@@ -1,4 +1,4 @@
-import type {EpisodeProgress, User} from "$lib/types";
+import type {AnimeWatchStatus, EpisodeProgress, User} from "$lib/types";
 import {invoke} from "@tauri-apps/api/core";
 
 export enum LoadingState {
@@ -27,7 +27,7 @@ export const params: {
     playersUrl: string;
     playerId: string;
     titleId: number | null;
-    animeWatchStatus: string;
+    animeWatchStatus: AnimeWatchStatus;
     animeIsFavourite: number;
     animeTotalEpisodes: number | null;
     episodeProgress: EpisodeProgress[];
@@ -38,7 +38,7 @@ export const params: {
     playersUrl: "",
     playerId: "",
     titleId: null,
-    animeWatchStatus: "",
+    animeWatchStatus: "no",
     animeIsFavourite: 0,
     animeTotalEpisodes: null,
     episodeProgress: [],
