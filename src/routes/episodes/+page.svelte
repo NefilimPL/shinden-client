@@ -66,6 +66,10 @@
             if (!params.titleId && details.titleId) {
                 params.titleId = details.titleId;
             }
+            if (details.userStatusLoaded) {
+                params.animeWatchStatus = details.watchStatus || "no";
+                params.animeIsFavourite = details.isFavourite;
+            }
         } catch (e) {
             details = null;
             log(LogLevel.WARNING, `Nie udalo sie zaladowac szczegolow anime: ${e}`);
@@ -88,6 +92,11 @@
                 isFavourite: params.animeIsFavourite,
             });
             params.animeWatchStatus = status;
+            if (details) {
+                details.watchStatus = status;
+                details.userStatusLoaded = true;
+                details = { ...details };
+            }
             log(LogLevel.SUCCESS, "Zmieniono status anime");
         } catch (e) {
             log(LogLevel.ERROR, `Nie udalo sie zapisac statusu anime: ${e}`);
