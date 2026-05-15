@@ -1,7 +1,7 @@
 use shinden_pl_api::client_backend::{
     append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime,
-    ShindenClientBackend, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
-    WatchingCacheRefreshSummary,
+    ShindenClientBackend, UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter,
+    WatchingCacheRefreshStatus, WatchingCacheRefreshSummary,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
@@ -65,6 +65,14 @@ async fn get_watching_anime(
     filter: Option<WatchingAnimeFilter>,
 ) -> Result<Vec<WatchingAnime>, String> {
     state.get_watching_anime(filter).await
+}
+
+#[tauri::command]
+async fn get_user_anime_lists(
+    state: tauri::State<'_, ShindenClientBackend>,
+    force_refresh: Option<bool>,
+) -> Result<UserAnimeListsPayload, String> {
+    state.get_user_anime_lists(force_refresh).await
 }
 
 #[tauri::command]
@@ -218,10 +226,7 @@ async fn get_cda_video(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn install_update_from_manifest(
-    app: tauri::AppHandle,
-    tag: String,
-) -> Result<(), String> {
+async fn install_update_from_manifest(app: tauri::AppHandle, tag: String) -> Result<(), String> {
     updater_commands::install_update_from_manifest(app, tag).await
 }
 
@@ -274,6 +279,7 @@ pub fn run() {
             get_season_anime,
             get_anime_details,
             get_watching_anime,
+            get_user_anime_lists,
             get_episodes_with_progress,
             update_anime_status,
             update_anime_rating,

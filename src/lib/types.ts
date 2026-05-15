@@ -106,6 +106,52 @@ export type WatchingAnime = Anime & {
     totalEpisodes: number | null;
 };
 
+export type UserAnimeListItem = Anime & {
+    titleId: number;
+    watchStatus: AnimeWatchStatus;
+    isFavourite: number;
+    watchedEpisodesCount: number;
+    totalEpisodes: number | null;
+    releaseYear: number | null;
+    active: boolean;
+    updatedAtMs: number;
+};
+
+export type UserAnimeListCounts = {
+    inProgress: number;
+    completed: number;
+    skip: number;
+    hold: number;
+    dropped: number;
+    plan: number;
+    all: number;
+};
+
+export type UserAnimeListsPayload = {
+    items: UserAnimeListItem[];
+    counts: UserAnimeListCounts;
+    refreshedAtMs: number | null;
+    syncError: string | null;
+};
+
+export type UserAnimeListStatusFilter = AnimeWatchStatus | "all";
+
+export type UserAnimeListSortKey =
+    | "title"
+    | "rating"
+    | "progress"
+    | "updated"
+    | "releaseYear";
+
+export type UserAnimeListFilters = {
+    query: string;
+    status: UserAnimeListStatusFilter;
+    animeType: string;
+    releaseYearFrom: number | null;
+    releaseYearTo: number | null;
+    sortKey: UserAnimeListSortKey;
+};
+
 export type SearchAnime = Anime & {
     titleId: number | null;
     watchStatus: AnimeWatchStatus;
