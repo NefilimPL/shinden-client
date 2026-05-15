@@ -44,12 +44,16 @@ export function applyUserAnimeListFilters(
 ): UserAnimeListItem[] {
     const query = filters.query.trim().toLocaleLowerCase();
     const animeType = filters.animeType.trim().toLocaleLowerCase();
+    const tag = filters.tag.trim().toLocaleLowerCase();
+    const ageRating = filters.ageRating.trim().toLocaleLowerCase();
 
     return [...items]
         .filter((item) => item.active)
         .filter((item) => !query || item.name.toLocaleLowerCase().includes(query))
         .filter((item) => filters.status === "all" || item.watchStatus === filters.status)
         .filter((item) => !animeType || item.anime_type.toLocaleLowerCase() === animeType)
+        .filter((item) => tagMatches(item, tag, filters.excludeTag))
+        .filter((item) => !ageRating || item.ageRating?.toLocaleLowerCase() === ageRating)
         .filter((item) => releaseYearMatches(item, filters))
         .sort((a, b) => compareUserAnimeListItems(a, b, filters.sortKey));
 }
@@ -60,6 +64,27 @@ export function userAnimeListTypes(items: UserAnimeListItem[]): string[] {
             items
                 .map((item) => item.anime_type.trim())
                 .filter((value) => value.length > 0),
+        ),
+    ).sort((a, b) => a.localeCompare(b));
+}
+
+export function userAnimeListTags(items: UserAnimeListItem[]): string[] {
+    return Array.from(
+        new Set(
+            items
+                .flatMap((item) => item.tags)
+                .map((tag) => tag.trim())
+                .filter((tag) => tag.length > 0),
+        ),
+    ).sort((a, b) => a.localeCompare(b));
+}
+
+export function userAnimeListAgeRatings(items: UserAnimeListItem[]): string[] {
+    return Array.from(
+        new Set(
+            items
+                .map((item) => item.ageRating?.trim() ?? "")
+                .filter((ageRating) => ageRating.length > 0),
         ),
     ).sort((a, b) => a.localeCompare(b));
 }
@@ -88,6 +113,15 @@ export function countUserAnimeListStatuses(items: UserAnimeListItem[]): UserAnim
     }
 
     return counts;
+}
+
+function tagMatches(item: UserAnimeListItem, selectedTag: string, excludeTag: boolean) {
+    if (!selectedTag) {
+        return true;
+    }
+
+    const hasTag = item.tags.some((tag) => tag.toLocaleLowerCase() === selectedTag);
+    return excludeTag ? !hasTag : hasTag;
 }
 
 function releaseYearMatches(item: UserAnimeListItem, filters: UserAnimeListFilters) {

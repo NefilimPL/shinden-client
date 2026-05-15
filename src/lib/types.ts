@@ -113,6 +113,8 @@ export type UserAnimeListItem = Anime & {
     watchedEpisodesCount: number;
     totalEpisodes: number | null;
     releaseYear: number | null;
+    tags: string[];
+    ageRating: string | null;
     active: boolean;
     updatedAtMs: number;
 };
@@ -149,6 +151,9 @@ export type UserAnimeListFilters = {
     animeType: string;
     releaseYearFrom: number | null;
     releaseYearTo: number | null;
+    tag: string;
+    excludeTag: boolean;
+    ageRating: string;
     sortKey: UserAnimeListSortKey;
 };
 

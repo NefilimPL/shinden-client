@@ -23,6 +23,8 @@ function item(overrides = {}) {
     watchedEpisodesCount: 1,
     totalEpisodes: 12,
     releaseYear: 2024,
+    tags: ["Akcja"],
+    ageRating: "R13+",
     active: true,
     updatedAtMs: 100,
     ...overrides,
@@ -42,6 +44,9 @@ test("filters user anime lists by title status type and release year", () => {
     animeType: "TV",
     releaseYearFrom: 2020,
     releaseYearTo: 2025,
+    tag: "",
+    excludeTag: false,
+    ageRating: "",
     sortKey: "title",
   });
 
@@ -61,6 +66,9 @@ test("sorts by numeric rating descending", () => {
     animeType: "",
     releaseYearFrom: null,
     releaseYearTo: null,
+    tag: "",
+    excludeTag: false,
+    ageRating: "",
     sortKey: "rating",
   });
 
@@ -80,6 +88,9 @@ test("sorts by unwatched progress descending", () => {
     animeType: "",
     releaseYearFrom: null,
     releaseYearTo: null,
+    tag: "",
+    excludeTag: false,
+    ageRating: "",
     sortKey: "progress",
   });
 
@@ -110,4 +121,47 @@ test("counts active user anime list statuses", () => {
   assert.equal(counts.completed, 2);
   assert.equal(counts.plan, 0);
   assert.equal(counts.all, 4);
+});
+
+test("filters by tag and age rating when details metadata is cached", () => {
+  const items = [
+    item({ titleId: 1, tags: ["Komedia", "Fantasy"], ageRating: "R17+" }),
+    item({ titleId: 2, tags: ["Dramat"], ageRating: "R13+" }),
+    item({ titleId: 3, tags: ["Fantasy"], ageRating: null }),
+  ];
+
+  const result = applyUserAnimeListFilters(items, {
+    query: "",
+    status: "all",
+    animeType: "",
+    releaseYearFrom: null,
+    releaseYearTo: null,
+    tag: "Fantasy",
+    excludeTag: false,
+    ageRating: "R17+",
+    sortKey: "title",
+  });
+
+  assert.deepEqual(result.map((anime) => anime.titleId), [1]);
+});
+
+test("can exclude a selected tag", () => {
+  const items = [
+    item({ titleId: 1, tags: ["Komedia"] }),
+    item({ titleId: 2, tags: ["Dramat"] }),
+  ];
+
+  const result = applyUserAnimeListFilters(items, {
+    query: "",
+    status: "all",
+    animeType: "",
+    releaseYearFrom: null,
+    releaseYearTo: null,
+    tag: "Komedia",
+    excludeTag: true,
+    ageRating: "",
+    sortKey: "title",
+  });
+
+  assert.deepEqual(result.map((anime) => anime.titleId), [2]);
 });

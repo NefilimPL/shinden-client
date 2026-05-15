@@ -19,7 +19,9 @@
         applyUserAnimeListFilters,
         countUserAnimeListStatuses,
         statusCountKey,
+        userAnimeListAgeRatings,
         userAnimeListStatusOptions,
+        userAnimeListTags,
         userAnimeListTypes,
     } from "$lib/userAnimeLists";
 
@@ -32,6 +34,9 @@
         animeType: "",
         releaseYearFrom: null,
         releaseYearTo: null,
+        tag: "",
+        excludeTag: false,
+        ageRating: "",
         sortKey: "title",
     });
     let viewMode: AnimeListViewMode = $state("grid");
@@ -43,6 +48,8 @@
     let visibleItems = $derived(applyUserAnimeListFilters(items, filters));
     let counts = $derived(countUserAnimeListStatuses(items));
     let animeTypes = $derived(userAnimeListTypes(items));
+    let tagOptions = $derived(userAnimeListTags(items));
+    let ageRatingOptions = $derived(userAnimeListAgeRatings(items));
     let currentStatusLabel = $derived(
         userAnimeListStatusOptions.find((option) => option.value === filters.status)?.label
             ?? "Wszystkie",
@@ -135,6 +142,9 @@
         filters.animeType = "";
         filters.releaseYearFrom = null;
         filters.releaseYearTo = null;
+        filters.tag = "";
+        filters.excludeTag = false;
+        filters.ageRating = "";
         filters.sortKey = "title";
     }
 
@@ -286,12 +296,43 @@
                         />
                     </div>
 
-                    <select class="select select-bordered select-sm w-full" disabled>
-                        <option>Tagi...</option>
+                    <label class="flex items-center justify-between gap-3 text-sm">
+                        <span>Wyklucz tag</span>
+                        <input
+                            type="checkbox"
+                            class="checkbox checkbox-sm"
+                            bind:checked={filters.excludeTag}
+                            disabled={!filters.tag}
+                        />
+                    </label>
+
+                    <select
+                        class="select select-bordered select-sm w-full"
+                        bind:value={filters.tag}
+                        disabled={tagOptions.length === 0}
+                    >
+                        <option value="">Tag...</option>
+                        {#each tagOptions as tag}
+                            <option value={tag}>{tag}</option>
+                        {/each}
                     </select>
-                    <select class="select select-bordered select-sm w-full" disabled>
-                        <option>Kat. wiekowa...</option>
+
+                    <select
+                        class="select select-bordered select-sm w-full"
+                        bind:value={filters.ageRating}
+                        disabled={ageRatingOptions.length === 0}
+                    >
+                        <option value="">Kat. wiekowa...</option>
+                        {#each ageRatingOptions as ageRating}
+                            <option value={ageRating}>{ageRating}</option>
+                        {/each}
                     </select>
+
+                    {#if tagOptions.length === 0 && ageRatingOptions.length === 0}
+                        <p class="text-xs opacity-60">
+                            Uzyj odswiezania cache, aby pobrac tagi i kategorie wiekowe.
+                        </p>
+                    {/if}
                 </div>
             </section>
         </aside>
@@ -451,4 +492,3 @@
         </main>
     </div>
 {/if}
-
