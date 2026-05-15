@@ -1,7 +1,8 @@
 use shinden_pl_api::client_backend::{
     append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime,
-    ShindenClientBackend, UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter,
-    WatchingCacheRefreshStatus, WatchingCacheRefreshSummary,
+    ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
+    UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
+    WatchingCacheRefreshSummary,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
@@ -73,6 +74,27 @@ async fn get_user_anime_lists(
     force_refresh: Option<bool>,
 ) -> Result<UserAnimeListsPayload, String> {
     state.get_user_anime_lists(force_refresh).await
+}
+
+#[tauri::command]
+fn get_user_anime_list_refresh_status(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshStatus, String> {
+    state.get_user_anime_list_refresh_status()
+}
+
+#[tauri::command]
+async fn refresh_user_anime_list_cache(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshSummary, String> {
+    state.refresh_user_anime_list_cache().await
+}
+
+#[tauri::command]
+async fn resume_user_anime_list_cache_refresh(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshSummary, String> {
+    state.resume_user_anime_list_cache_refresh().await
 }
 
 #[tauri::command]
@@ -280,6 +302,9 @@ pub fn run() {
             get_anime_details,
             get_watching_anime,
             get_user_anime_lists,
+            get_user_anime_list_refresh_status,
+            refresh_user_anime_list_cache,
+            resume_user_anime_list_cache_refresh,
             get_episodes_with_progress,
             update_anime_status,
             update_anime_rating,

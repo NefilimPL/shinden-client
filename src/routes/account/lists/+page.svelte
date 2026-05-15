@@ -12,9 +12,12 @@
         AnimeWatchStatus,
         UserAnimeListFilters,
         UserAnimeListItem,
+        UserAnimeListRefreshStatus,
+        UserAnimeListRefreshSummary,
         UserAnimeListsPayload,
         UserAnimeListStatusFilter,
     } from "$lib/types";
+    import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
     import {
         applyUserAnimeListFilters,
         countUserAnimeListStatuses,
@@ -26,6 +29,7 @@
     } from "$lib/userAnimeLists";
 
     const viewModeStorageKey = "shinden:user-anime-lists-view-mode";
+    const refreshStatusPollMs = 1500;
 
     let items: UserAnimeListItem[] = $state([]);
     let filters: UserAnimeListFilters = $state({
@@ -40,7 +44,7 @@
         sortKey: "title",
     });
     let viewMode: AnimeListViewMode = $state("grid");
-    let refreshInProgress = $state(false);
+    let refreshStatus: UserAnimeListRefreshStatus = $state(defaultUserAnimeListRefreshStatus());
     let statusUpdateInProgress: number | null = $state(null);
     let syncError: string | null = $state(null);
     let refreshedAtMs: number | null = $state(null);
@@ -50,13 +54,46 @@
     let animeTypes = $derived(userAnimeListTypes(items));
     let tagOptions = $derived(userAnimeListTags(items));
     let ageRatingOptions = $derived(userAnimeListAgeRatings(items));
+    let refreshInProgress = $derived(refreshStatus.running);
+    let refreshProgressText = $derived(
+        refreshStatus.total > 0
+            ? `Zebrano ${refreshStatus.current}/${refreshStatus.total}, pozostalo ${refreshStatus.remaining}`
+            : "Przygotowywanie odswiezania...",
+    );
     let currentStatusLabel = $derived(
         userAnimeListStatusOptions.find((option) => option.value === filters.status)?.label
             ?? "Wszystkie",
     );
 
-    onMount(async () => {
+    onMount(() => {
         loadViewMode();
+
+        const refreshStatusTimer = window.setInterval(() => {
+            void pollUserAnimeListRefreshStatus();
+        }, refreshStatusPollMs);
+
+        void initializePage();
+
+        return () => {
+            window.clearInterval(refreshStatusTimer);
+        };
+    });
+
+    function defaultUserAnimeListRefreshStatus(): UserAnimeListRefreshStatus {
+        return {
+            running: false,
+            current: 0,
+            total: 0,
+            remaining: 0,
+            refreshed: 0,
+            failed: 0,
+            currentTitle: "",
+            lastFinishedAtMs: null,
+            lastError: null,
+        };
+    }
+
+    async function initializePage() {
         await ensureUserLoaded();
         if (!globalStates.user.name) {
             globalStates.loadingState = LoadingState.WARNING;
@@ -64,8 +101,10 @@
             return;
         }
 
+        void resumeUserAnimeListRefresh();
+        await pollUserAnimeListRefreshStatus(false);
         await loadUserAnimeLists(false);
-    });
+    }
 
     async function ensureUserLoaded() {
         if (globalStates.user.name) {
@@ -91,11 +130,10 @@
         localStorage.setItem(viewModeStorageKey, value);
     }
 
-    async function loadUserAnimeLists(forceRefresh: boolean) {
+    async function loadUserAnimeLists(forceRefresh: boolean, showInitialLoading = true) {
         try {
-            refreshInProgress = forceRefresh;
             syncError = null;
-            if (items.length === 0) {
+            if (showInitialLoading && items.length === 0) {
                 globalStates.loadingState = LoadingState.LOADING;
             }
 
@@ -117,8 +155,60 @@
             globalStates.loadingState = LoadingState.ERROR;
             syncError = `${error}`;
             log(LogLevel.ERROR, `Error loading user anime lists: ${error}`);
-        } finally {
-            refreshInProgress = false;
+        }
+    }
+
+    async function pollUserAnimeListRefreshStatus(reloadOnFinish = true) {
+        try {
+            const previousRunning = refreshStatus.running;
+            const previousFinishedAtMs = refreshStatus.lastFinishedAtMs;
+            const nextStatus = await invoke<UserAnimeListRefreshStatus>(
+                "get_user_anime_list_refresh_status",
+            );
+            refreshStatus = nextStatus;
+
+            if (
+                reloadOnFinish
+                && previousRunning
+                && !nextStatus.running
+                && nextStatus.lastFinishedAtMs
+                && nextStatus.lastFinishedAtMs !== previousFinishedAtMs
+            ) {
+                await loadUserAnimeLists(false, false);
+            }
+        } catch (error) {
+            log(LogLevel.WARNING, `Error polling user anime list refresh: ${error}`);
+        }
+    }
+
+    async function refreshUserAnimeListCache() {
+        if (refreshStatus.running) {
+            return;
+        }
+
+        try {
+            syncError = null;
+            refreshStatus = {
+                ...defaultUserAnimeListRefreshStatus(),
+                running: true,
+                lastFinishedAtMs: refreshStatus.lastFinishedAtMs,
+            };
+
+            const summary = await invoke<UserAnimeListRefreshSummary>(
+                "refresh_user_anime_list_cache",
+            );
+            refreshStatus = summary.status;
+            await loadUserAnimeLists(false, false);
+
+            if (summary.status.lastError) {
+                log(LogLevel.WARNING, summary.status.lastError);
+            } else {
+                log(LogLevel.SUCCESS, "Odswiezono cache wszystkich list");
+            }
+        } catch (error) {
+            syncError = `${error}`;
+            await pollUserAnimeListRefreshStatus(false);
+            log(LogLevel.ERROR, `Error refreshing user anime lists: ${error}`);
         }
     }
 
@@ -347,6 +437,28 @@
                     {#if syncError}
                         <div class="truncate text-xs text-warning">{syncError}</div>
                     {/if}
+                    {#if refreshStatus.running}
+                        <div class="mt-2 flex max-w-xl flex-wrap items-center gap-2 text-xs">
+                            <progress
+                                class="progress progress-primary h-1.5 w-40"
+                                value={refreshStatus.current}
+                                max={refreshStatus.total || 1}
+                            ></progress>
+                            <span class="tabular-nums opacity-80">{refreshProgressText}</span>
+                            {#if refreshStatus.failed > 0}
+                                <span class="text-warning">Bledy: {refreshStatus.failed}</span>
+                            {/if}
+                        </div>
+                        {#if refreshStatus.currentTitle}
+                            <div class="mt-1 max-w-xl truncate text-xs opacity-60">
+                                Teraz: {refreshStatus.currentTitle}
+                            </div>
+                        {/if}
+                    {:else if refreshStatus.lastError}
+                        <div class="mt-1 truncate text-xs text-warning">
+                            Ostatnie odswiezanie: {refreshStatus.lastError}
+                        </div>
+                    {/if}
                 </div>
 
                 <div class="flex shrink-0 items-center gap-1">
@@ -356,7 +468,7 @@
                         aria-label="odswiez cache list"
                         title="Odswiez cache list"
                         disabled={refreshInProgress}
-                        onclick={() => { void loadUserAnimeLists(true); }}
+                        onclick={() => { void refreshUserAnimeListCache(); }}
                     >
                         {#if refreshInProgress}
                             <span class="loading loading-spinner loading-xs"></span>

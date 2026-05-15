@@ -136,6 +136,23 @@ export type UserAnimeListsPayload = {
     syncError: string | null;
 };
 
+export type UserAnimeListRefreshStatus = {
+    running: boolean;
+    current: number;
+    total: number;
+    remaining: number;
+    refreshed: number;
+    failed: number;
+    currentTitle: string;
+    lastFinishedAtMs: number | null;
+    lastError: string | null;
+};
+
+export type UserAnimeListRefreshSummary = {
+    status: UserAnimeListRefreshStatus;
+    alreadyRunning: boolean;
+};
+
 export type UserAnimeListStatusFilter = AnimeWatchStatus | "all";
 
 export type UserAnimeListSortKey =
