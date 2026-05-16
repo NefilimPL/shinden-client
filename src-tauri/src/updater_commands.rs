@@ -17,25 +17,43 @@ struct UpdateProgressPayload {
     finished: bool,
 }
 
+fn strip_release_prefix(tag: &str) -> &str {
+    let lower = tag.to_ascii_lowercase();
+
+    if lower.starts_with("app-v.") {
+        &tag[6..]
+    } else if lower.starts_with("app-v") {
+        &tag[5..]
+    } else if lower.starts_with("v.") {
+        &tag[2..]
+    } else if lower.starts_with('v') {
+        &tag[1..]
+    } else {
+        tag
+    }
+}
+
+fn is_safe_backend_suffix(suffix: &str) -> bool {
+    !suffix.is_empty()
+        && suffix
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+}
+
 pub(crate) fn release_version_from_tag(tag: &str) -> Result<String, String> {
     let tag = tag.trim();
-    let without_app_prefix = tag
-        .strip_prefix("app-v")
-        .or_else(|| tag.strip_prefix("app-V"))
-        .unwrap_or(tag);
-    let version = without_app_prefix
-        .strip_prefix('v')
-        .or_else(|| without_app_prefix.strip_prefix('V'))
-        .unwrap_or(without_app_prefix);
+    let version_with_suffix = strip_release_prefix(tag);
+    let (version, suffix) = version_with_suffix
+        .split_once('-')
+        .map(|(version, suffix)| (version, Some(suffix)))
+        .unwrap_or((version_with_suffix, None));
 
-    let parts: Vec<&str> = version.split(['-', '+']).next().unwrap_or("").split('.').collect();
+    let parts: Vec<&str> = version.split('.').collect();
     let has_semver_core = parts.len() == 3
         && parts
             .iter()
             .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()));
-    let has_safe_suffix = version
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '+'));
+    let has_safe_suffix = suffix.map_or(true, is_safe_backend_suffix);
 
     if has_semver_core && has_safe_suffix {
         Ok(version.to_string())

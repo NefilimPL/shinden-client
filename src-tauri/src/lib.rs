@@ -344,12 +344,19 @@ mod updater_command_tests {
             "https://github.com/NefilimPL/shinden-client/releases/download/V4.0.5/latest.json"
         );
         assert_eq!(release_version_from_tag("app-v4.0.3").unwrap(), "4.0.3");
+        assert_eq!(release_version_from_tag("v4.0.7-dev").unwrap(), "4.0.7");
+        assert_eq!(release_version_from_tag("v.4.0.7-preview").unwrap(), "4.0.7");
+        assert_eq!(
+            release_manifest_endpoint("v4.0.7-dev").unwrap(),
+            "https://github.com/NefilimPL/shinden-client/releases/download/v4.0.7-dev/latest.json"
+        );
     }
 
     #[test]
     fn release_manifest_endpoint_rejects_invalid_release_tags() {
         assert!(release_manifest_endpoint("../V4.0.5").is_err());
         assert!(release_manifest_endpoint("nightly").is_err());
+        assert!(release_manifest_endpoint("v4.0.7-feature/dev").is_err());
         assert!(release_manifest_endpoint("").is_err());
     }
 }
