@@ -35,9 +35,9 @@ fn strip_release_prefix(tag: &str) -> &str {
 
 fn is_safe_backend_suffix(suffix: &str) -> bool {
     !suffix.is_empty()
-        && suffix
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        && suffix.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
 }
 
 pub(crate) fn release_version_from_tag(tag: &str) -> Result<String, String> {
@@ -50,9 +50,9 @@ pub(crate) fn release_version_from_tag(tag: &str) -> Result<String, String> {
 
     let parts: Vec<&str> = version.split('.').collect();
     let has_semver_core = parts.len() == 3
-        && parts
-            .iter()
-            .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()));
+        && parts.iter().all(|part| {
+            !part.is_empty() && part.chars().all(|character| character.is_ascii_digit())
+        });
     let has_safe_suffix = suffix.map_or(true, is_safe_backend_suffix);
 
     if has_semver_core && has_safe_suffix {
@@ -62,13 +62,25 @@ pub(crate) fn release_version_from_tag(tag: &str) -> Result<String, String> {
     }
 }
 
+pub(crate) fn release_manifest_versions_from_tag(tag: &str) -> Result<Vec<String>, String> {
+    let tag = tag.trim();
+    let version = release_version_from_tag(tag)?;
+    let version_with_suffix = strip_release_prefix(tag);
+
+    if version_with_suffix == version {
+        Ok(vec![version])
+    } else {
+        Ok(vec![version, version_with_suffix.to_string()])
+    }
+}
+
 pub(crate) fn release_manifest_endpoint(tag: &str) -> Result<String, String> {
     let tag = tag.trim();
     if tag.is_empty()
         || tag.len() > 80
-        || !tag
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        || !tag.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
     {
         return Err(format!("Nieprawidlowy tag wersji: {tag}"));
     }
@@ -105,7 +117,7 @@ fn emit_update_progress(
 
 pub async fn install_update_from_manifest(app: AppHandle, tag: String) -> Result<(), String> {
     let endpoint = release_manifest_endpoint(&tag)?;
-    let expected_version = release_version_from_tag(&tag)?;
+    let expected_versions = release_manifest_versions_from_tag(&tag)?;
     let endpoint = endpoint
         .parse()
         .map_err(|error| format!("Nie mozna odczytac endpointu aktualizacji: {error}"))?;
@@ -115,7 +127,10 @@ pub async fn install_update_from_manifest(app: AppHandle, tag: String) -> Result
         .endpoints(vec![endpoint])
         .map_err(|error| format!("Nie mozna przygotowac aktualizatora: {error}"))?
         .version_comparator(move |_current_version, remote_release| {
-            remote_release.version.to_string() == expected_version
+            let remote_version = remote_release.version.to_string();
+            expected_versions
+                .iter()
+                .any(|expected_version| expected_version == &remote_version)
         })
         .build()
         .map_err(|error| format!("Nie mozna przygotowac aktualizatora: {error}"))?;

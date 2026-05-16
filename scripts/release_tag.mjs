@@ -23,7 +23,8 @@ export function parseReleaseTag(tag, defaultBackendRef = "Main") {
     appVersion,
     backendRef: suffix ?? fallbackBackendRef,
     displayVersion,
-    hasBackendSuffix: Boolean(suffix)
+    hasBackendSuffix: Boolean(suffix),
+    updaterVersion: suffix ? `${appVersion}-${suffix}` : appVersion
   };
 }
 
@@ -66,7 +67,8 @@ export function applyReleaseVersion({
     writeGithubEnv(githubEnvPath, {
       APP_VERSION: parsed.appVersion,
       BACKEND_REF: parsed.backendRef,
-      RELEASE_DISPLAY_VERSION: parsed.displayVersion
+      RELEASE_DISPLAY_VERSION: parsed.displayVersion,
+      UPDATER_VERSION: parsed.updaterVersion
     });
   }
 
@@ -79,5 +81,6 @@ if (isDirectRun) {
   const parsed = applyReleaseVersion();
   console.log(`Release tag: ${parsed.displayVersion}`);
   console.log(`App version: ${parsed.appVersion}`);
+  console.log(`Updater version: ${parsed.updaterVersion}`);
   console.log(`Backend ref: ${parsed.backendRef}`);
 }

@@ -95,3 +95,13 @@ jobs:
           releaseBody: "Windows installer and updater manifest generated automatically."
           releaseDraft: false
           prerelease: ${{ github.event.release.prerelease || false }}
+
+      - name: Patch updater manifest version for suffixed tags
+        if: env.UPDATER_VERSION != env.APP_VERSION
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download $env:RELEASE_TAG --pattern latest.json --clobber
+          node scripts/patch_updater_manifest.mjs latest.json "$env:UPDATER_VERSION"
+          gh release upload $env:RELEASE_TAG latest.json --clobber

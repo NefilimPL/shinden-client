@@ -335,7 +335,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod updater_command_tests {
-    use super::updater_commands::{release_manifest_endpoint, release_version_from_tag};
+    use super::updater_commands::{
+        release_manifest_endpoint, release_manifest_versions_from_tag, release_version_from_tag,
+    };
 
     #[test]
     fn release_manifest_endpoint_accepts_known_release_tags() {
@@ -345,7 +347,18 @@ mod updater_command_tests {
         );
         assert_eq!(release_version_from_tag("app-v4.0.3").unwrap(), "4.0.3");
         assert_eq!(release_version_from_tag("v4.0.7-dev").unwrap(), "4.0.7");
-        assert_eq!(release_version_from_tag("v.4.0.7-preview").unwrap(), "4.0.7");
+        assert_eq!(
+            release_version_from_tag("v.4.0.7-preview").unwrap(),
+            "4.0.7"
+        );
+        assert_eq!(
+            release_manifest_versions_from_tag("v4.0.7-dev").unwrap(),
+            vec!["4.0.7".to_string(), "4.0.7-dev".to_string()]
+        );
+        assert_eq!(
+            release_manifest_versions_from_tag("v4.0.7").unwrap(),
+            vec!["4.0.7".to_string()]
+        );
         assert_eq!(
             release_manifest_endpoint("v4.0.7-dev").unwrap(),
             "https://github.com/NefilimPL/shinden-client/releases/download/v4.0.7-dev/latest.json"
