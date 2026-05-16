@@ -6,7 +6,7 @@ import {
   extractVersionFromTag,
   mapGitHubReleasesToUpdateVersions,
   selectDefaultReleaseVersion
-} from "../cache/ts-tests/updateReleases.js";
+} from "../src/lib/updateReleases.ts";
 
 test("extractVersionFromTag returns numeric app version and accepts backend suffixes", () => {
   assert.equal(extractVersionFromTag("V4.0.5"), "4.0.5");
