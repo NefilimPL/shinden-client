@@ -8,6 +8,7 @@
     import { formatShindenCreatedTime } from "$lib/shindenProgress";
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import type { EpisodeProgress } from "$lib/types";
+    import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
 
     let isBuiltIn: boolean = $state(false);
     let iframeHtml: string = $state("");
@@ -114,8 +115,26 @@
         }
     }
 
+    async function restoreWindowFullscreenAfterPlayerExit() {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await windowFullscreenIntent.restoreAfterElementFullscreenExit(
+            getCurrentWindow(),
+            document.fullscreenElement
+        );
+    }
+
+    function handlePlayerFullscreenChange() {
+        void restoreWindowFullscreenAfterPlayerExit();
+    }
+
 
     onMount(async () => {
+        document.addEventListener("fullscreenchange", handlePlayerFullscreenChange);
+
         try {
             globalStates.loadingState = LoadingState.LOADING;
             log(LogLevel.INFO, "Loading player...");
@@ -170,6 +189,10 @@
     })
 
     onDestroy(() => {
+        if (typeof document !== "undefined") {
+            document.removeEventListener("fullscreenchange", handlePlayerFullscreenChange);
+        }
+
         dashPlayer?.reset();
         dashPlayer = null;
     });

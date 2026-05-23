@@ -195,16 +195,16 @@ export async function getAndinstallUpdate(selectedVersion = status.selectedVersi
     clearProgress();
     status.errorMessage = null;
     await ensureProgressListener();
-    await setUpdateState(UpdateState.CHECKING, `Przygotowywanie wersji ${selectedVersion.version}`);
+    await setUpdateState(UpdateState.CHECKING, `Przygotowywanie wersji ${selectedVersion.displayName}`);
 
     try {
-        log(LogLevel.INFO, `Installing update ${selectedVersion.version}`);
+        log(LogLevel.INFO, `Installing update ${selectedVersion.displayName}`);
         await invoke("install_update_from_manifest", { tag: selectedVersion.tagName });
     } catch (error) {
         const message = errorToMessage(error);
         status.errorMessage = message;
         await setUpdateState(UpdateState.ERROR);
-        log(LogLevel.ERROR, `Update ${selectedVersion.version} failed: ${message}`);
+        log(LogLevel.ERROR, `Update ${selectedVersion.displayName} failed: ${message}`);
         throw error;
     }
 }

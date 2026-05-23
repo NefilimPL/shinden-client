@@ -18,6 +18,7 @@ export interface UpdateReleaseVersion {
     tagName: string;
     version: string;
     name: string;
+    displayName: string;
     manifestUrl: string;
     publishedAt: string | null;
     prerelease: boolean;
@@ -31,14 +32,11 @@ export interface UpdateProgressPayload {
     finished: boolean;
 }
 
+const RELEASE_TAG_PATTERN = /^(?:app-)?v\.?(\d+\.\d+\.\d+)(?:-[0-9A-Za-z][0-9A-Za-z._-]*)?$/i;
+
 export function extractVersionFromTag(tagName: string): string | null {
-    const version = tagName.trim().replace(/^app-v/i, "").replace(/^v/i, "");
-
-    if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
-        return null;
-    }
-
-    return version;
+    const match = RELEASE_TAG_PATTERN.exec(tagName.trim());
+    return match?.[1] ?? null;
 }
 
 function versionParts(version: string): number[] {
@@ -78,6 +76,7 @@ export function mapGitHubReleasesToUpdateVersions(releases: GitHubRelease[]): Up
                 tagName: release.tag_name,
                 version,
                 name: release.name || release.tag_name,
+                displayName: release.tag_name,
                 manifestUrl: manifest.browser_download_url,
                 publishedAt: release.published_at ?? null,
                 prerelease: Boolean(release.prerelease)

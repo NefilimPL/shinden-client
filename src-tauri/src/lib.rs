@@ -1,6 +1,7 @@
 use shinden_pl_api::client_backend::{
     append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime,
-    ShindenClientBackend, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
+    ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
+    UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
@@ -65,6 +66,35 @@ async fn get_watching_anime(
     filter: Option<WatchingAnimeFilter>,
 ) -> Result<Vec<WatchingAnime>, String> {
     state.get_watching_anime(filter).await
+}
+
+#[tauri::command]
+async fn get_user_anime_lists(
+    state: tauri::State<'_, ShindenClientBackend>,
+    force_refresh: Option<bool>,
+) -> Result<UserAnimeListsPayload, String> {
+    state.get_user_anime_lists(force_refresh).await
+}
+
+#[tauri::command]
+fn get_user_anime_list_refresh_status(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshStatus, String> {
+    state.get_user_anime_list_refresh_status()
+}
+
+#[tauri::command]
+async fn refresh_user_anime_list_cache(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshSummary, String> {
+    state.refresh_user_anime_list_cache().await
+}
+
+#[tauri::command]
+async fn resume_user_anime_list_cache_refresh(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<UserAnimeListRefreshSummary, String> {
+    state.resume_user_anime_list_cache_refresh().await
 }
 
 #[tauri::command]
@@ -218,10 +248,7 @@ async fn get_cda_video(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn install_update_from_manifest(
-    app: tauri::AppHandle,
-    tag: String,
-) -> Result<(), String> {
+async fn install_update_from_manifest(app: tauri::AppHandle, tag: String) -> Result<(), String> {
     updater_commands::install_update_from_manifest(app, tag).await
 }
 
@@ -274,6 +301,10 @@ pub fn run() {
             get_season_anime,
             get_anime_details,
             get_watching_anime,
+            get_user_anime_lists,
+            get_user_anime_list_refresh_status,
+            refresh_user_anime_list_cache,
+            resume_user_anime_list_cache_refresh,
             get_episodes_with_progress,
             update_anime_status,
             update_anime_rating,
@@ -304,7 +335,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod updater_command_tests {
-    use super::updater_commands::{release_manifest_endpoint, release_version_from_tag};
+    use super::updater_commands::{
+        release_manifest_endpoint, release_manifest_versions_from_tag, release_version_from_tag,
+    };
 
     #[test]
     fn release_manifest_endpoint_accepts_known_release_tags() {
@@ -313,12 +346,30 @@ mod updater_command_tests {
             "https://github.com/NefilimPL/shinden-client/releases/download/V4.0.5/latest.json"
         );
         assert_eq!(release_version_from_tag("app-v4.0.3").unwrap(), "4.0.3");
+        assert_eq!(release_version_from_tag("v4.0.7-dev").unwrap(), "4.0.7");
+        assert_eq!(
+            release_version_from_tag("v.4.0.7-preview").unwrap(),
+            "4.0.7"
+        );
+        assert_eq!(
+            release_manifest_versions_from_tag("v4.0.7-dev").unwrap(),
+            vec!["4.0.7".to_string(), "4.0.7-dev".to_string()]
+        );
+        assert_eq!(
+            release_manifest_versions_from_tag("v4.0.7").unwrap(),
+            vec!["4.0.7".to_string()]
+        );
+        assert_eq!(
+            release_manifest_endpoint("v4.0.7-dev").unwrap(),
+            "https://github.com/NefilimPL/shinden-client/releases/download/v4.0.7-dev/latest.json"
+        );
     }
 
     #[test]
     fn release_manifest_endpoint_rejects_invalid_release_tags() {
         assert!(release_manifest_endpoint("../V4.0.5").is_err());
         assert!(release_manifest_endpoint("nightly").is_err());
+        assert!(release_manifest_endpoint("v4.0.7-feature/dev").is_err());
         assert!(release_manifest_endpoint("").is_err());
     }
 }

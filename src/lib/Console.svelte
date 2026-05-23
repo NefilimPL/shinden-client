@@ -10,7 +10,10 @@ import Success from "$lib/logs/Success.svelte";
 </script>
 
 <div class="fixed flex flex-col h-full w-full bg-base-100/99 top-0 left-0 z-10 font-mono" transition:slide>
-    <header data-tauri-drag-region class="navbar shadow-sm bg-base-300 h-3 gap-4">
+    <header
+        data-tauri-drag-region
+        class="navbar shadow-sm bg-base-300 h-3 gap-4"
+    >
         <div data-tauri-drag-region class="flex-1 font-mono">
             <a class="btn btn-ghost text-xl" href="/">Console</a>
         </div>

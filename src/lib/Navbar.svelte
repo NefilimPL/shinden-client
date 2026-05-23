@@ -4,6 +4,8 @@
     import UpdateButton from "$lib/logs/UpdateButton.svelte";
     import { onMount } from "svelte";
     import { globalStates } from "$lib/global.svelte";
+    import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
+    import { shouldStartTouchWindowDrag } from "$lib/windowDrag";
 
     let isDark = $state(true);
 
@@ -25,17 +27,30 @@
 
     async function toggleFullscreenWindow() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const appWindow = getCurrentWindow();
-        await appWindow.setFullscreen(!(await appWindow.isFullscreen()));
+        await windowFullscreenIntent.toggleWindowFullscreen(getCurrentWindow());
     }
 
     async function closeWindow() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().close();
     }
+
+    async function startTouchWindowDrag(event: PointerEvent) {
+        if (!shouldStartTouchWindowDrag(event)) {
+            return;
+        }
+
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().startDragging();
+    }
 </script>
 
-<header data-tauri-drag-region class="navbar shadow-sm bg-base-300 h-16 gap-4">
+<svelte:window onpointerdown={(event) => { void startTouchWindowDrag(event); }} />
+
+<header
+    data-tauri-drag-region
+    class="navbar shadow-sm bg-base-300 h-16 gap-4"
+>
     <div data-tauri-drag-region class="flex-1 font-[Orbitron] flex items-center gap-4">
         <a class="btn btn-ghost text-xl" href="/">Shinden Client 4</a>
         <LoadingButton />

@@ -6,12 +6,14 @@ import {
   extractVersionFromTag,
   mapGitHubReleasesToUpdateVersions,
   selectDefaultReleaseVersion
-} from "../cache/ts-tests/updateReleases.js";
+} from "../src/lib/updateReleases.ts";
 
-test("extractVersionFromTag accepts Shinden release tag formats", () => {
+test("extractVersionFromTag returns numeric app version and accepts backend suffixes", () => {
   assert.equal(extractVersionFromTag("V4.0.5"), "4.0.5");
-  assert.equal(extractVersionFromTag("v4.0.4"), "4.0.4");
+  assert.equal(extractVersionFromTag("v.4.0.4"), "4.0.4");
   assert.equal(extractVersionFromTag("app-v4.0.3"), "4.0.3");
+  assert.equal(extractVersionFromTag("v4.0.7-dev"), "4.0.7");
+  assert.equal(extractVersionFromTag("app-v4.0.7-preview"), "4.0.7");
   assert.equal(extractVersionFromTag("not-a-version"), null);
 });
 
@@ -53,6 +55,7 @@ test("mapGitHubReleasesToUpdateVersions keeps releases with latest manifests", (
       tagName: "V4.0.5",
       version: "4.0.5",
       name: "V4.0.5",
+      displayName: "V4.0.5",
       manifestUrl: "https://example.com/V4.0.5/latest.json",
       publishedAt: "2026-05-13T17:48:04Z",
       prerelease: false
@@ -74,10 +77,35 @@ test("mapGitHubReleasesToUpdateVersions includes prereleases when they have upda
   assert.deepEqual(mapGitHubReleasesToUpdateVersions(releases), [
     {
       tagName: "V4.1.0-beta.1",
-      version: "4.1.0-beta.1",
+      version: "4.1.0",
       name: "V4.1.0-beta.1",
+      displayName: "V4.1.0-beta.1",
       manifestUrl: "https://example.com/V4.1.0-beta.1/latest.json",
       publishedAt: "2026-05-14T17:48:04Z",
+      prerelease: true
+    }
+  ]);
+});
+
+test("mapGitHubReleasesToUpdateVersions keeps full tag as display name", () => {
+  const releases = [
+    {
+      tag_name: "v4.0.7-dev",
+      name: "Shinden Client 4.0.7",
+      prerelease: true,
+      published_at: "2026-05-16T17:48:04Z",
+      assets: [{ name: "latest.json", browser_download_url: "https://example.com/v4.0.7-dev/latest.json" }]
+    }
+  ];
+
+  assert.deepEqual(mapGitHubReleasesToUpdateVersions(releases), [
+    {
+      tagName: "v4.0.7-dev",
+      version: "4.0.7",
+      name: "Shinden Client 4.0.7",
+      displayName: "v4.0.7-dev",
+      manifestUrl: "https://example.com/v4.0.7-dev/latest.json",
+      publishedAt: "2026-05-16T17:48:04Z",
       prerelease: true
     }
   ]);

@@ -85,7 +85,10 @@
                     <p class="py-6">
                         W razie problemów z dostępem do listy odcinków - zaloguj się ponownie.
                     </p>
-                    <button class="btn btn-neutral" onclick={logout}>Wyloguj się</button>
+                    <div class="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+                        <a class="btn btn-primary" href="/account/lists">Moje listy anime</a>
+                        <button class="btn btn-neutral" onclick={logout}>Wyloguj się</button>
+                    </div>
                 </div>
             </div>
     {/if}

@@ -113,7 +113,7 @@
             {:else}
                 {#each status.availableVersions as release}
                     <option value={release.tagName}>
-                        v{release.version}{release.version === version ? " - obecna" : ""}{release.prerelease ? " - prerelease" : ""}
+                        {release.displayName}{release.version === version ? " - obecna" : ""}{release.prerelease ? " - prerelease" : ""}
                     </option>
                 {/each}
             {/if}
