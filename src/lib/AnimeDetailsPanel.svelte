@@ -16,6 +16,7 @@
         onStatusChange,
         onRatingChange,
         onOpenRelated,
+        onOpenOnShinden,
     }: {
         details: AnimeDetails;
         watchStatus: AnimeWatchStatus;
@@ -25,6 +26,7 @@
         onStatusChange: (status: AnimeWatchStatus) => void;
         onRatingChange: (ratingType: AnimeRatingKey, value: number) => void;
         onOpenRelated: (series: RelatedSeries) => void;
+        onOpenOnShinden: () => void;
     } = $props();
 
     const ratingLabels: Array<{ key: AnimeRatingKey; label: string }> = [
@@ -83,6 +85,9 @@
             <div>
                 <div class="text-xs uppercase tracking-wide opacity-60">Anime</div>
                 <h1 class="text-2xl font-bold">{details.name}</h1>
+                <button type="button" class="btn btn-outline btn-sm mt-2" onclick={onOpenOnShinden}>
+                    Otw?rz w Shinden
+                </button>
                 {#if details.alternativeTitles.length > 0}
                     <p class="mt-1 text-sm opacity-70">{details.alternativeTitles.join(", ")}</p>
                 {/if}

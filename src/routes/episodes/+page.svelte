@@ -1,6 +1,7 @@
 <script lang="ts">
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {onMount} from "svelte";
+    import { openUrl } from "@tauri-apps/plugin-opener";
     import {invoke} from "@tauri-apps/api/core";
     import type {
         AnimeDetails,
@@ -157,6 +158,13 @@
         });
     }
 
+    async function openOnShinden() {
+        if (!params.seriesUrl) {
+            return;
+        }
+
+        await openUrl(params.seriesUrl);
+    }
     function currentWatchStatus(): AnimeWatchStatus {
         return params.animeWatchStatus || "no";
     }
@@ -223,6 +231,7 @@
                 onStatusChange={(status) => { void updateAnimeStatus(status); }}
                 onRatingChange={(ratingType, value) => { void updateAnimeRating(ratingType, value); }}
                 onOpenRelated={(series) => { void openRelatedSeries(series); }}
+                onOpenOnShinden={() => { void openOnShinden(); }}
             />
         {/if}
 

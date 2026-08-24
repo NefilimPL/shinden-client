@@ -1,6 +1,12 @@
+import type { FullscreenPresentation } from "$lib/titleWorkspace";
 export type FullscreenWindow = {
     setFullscreen(fullscreen: boolean): Promise<void>;
     isFullscreen(): Promise<boolean>;
+};
+export type TaskbarPresentationWindow = FullscreenWindow & {
+    isMaximized(): Promise<boolean>;
+    maximize(): Promise<void>;
+    unmaximize(): Promise<void>;
 };
 
 export function createWindowFullscreenIntent() {
@@ -16,7 +22,29 @@ export function createWindowFullscreenIntent() {
             intendedFullscreen = nextFullscreen;
             await appWindow.setFullscreen(nextFullscreen);
         },
+        async toggleWindowPresentation(
+            appWindow: TaskbarPresentationWindow,
+            presentation: FullscreenPresentation,
+        ) {
+            if (presentation === "immersive") {
+                const nextFullscreen = !(await appWindow.isFullscreen());
+                intendedFullscreen = nextFullscreen;
+                await appWindow.setFullscreen(nextFullscreen);
+                return;
+            }
 
+            intendedFullscreen = false;
+            if (await appWindow.isFullscreen()) {
+                await appWindow.setFullscreen(false);
+            }
+
+            if (await appWindow.isMaximized()) {
+
+                await appWindow.unmaximize();
+            } else {
+                await appWindow.maximize();
+            }
+        },
         async restoreAfterElementFullscreenExit(
             appWindow: Pick<FullscreenWindow, "setFullscreen">,
             fullscreenElement: Element | null
