@@ -341,7 +341,7 @@
                 </div>
                 <div class="text-sm opacity-80 truncate">
                     {result.length} pozycji
-                    {#if onlyAvailableUnwatched && checkSubtitleAvailabilityOnline}
+                    {#if checkSubtitleAvailabilityOnline}
                         | napisy: {subtitleLanguage || "dowolny"}
                         {#if excludeAiSubtitles}
                             bez AI
@@ -556,13 +556,12 @@
                         type="checkbox"
                         class="toggle toggle-primary"
                         bind:checked={draftCheckSubtitleAvailabilityOnline}
-                        disabled={!draftOnlyAvailableUnwatched}
                     />
                 </label>
 
-                {#if draftOnlyAvailableUnwatched && draftCheckSubtitleAvailabilityOnline}
+                {#if draftCheckSubtitleAvailabilityOnline}
                     <p class="text-xs opacity-60">
-                        Filtrowanie po jezyku wydluza odswiezanie, bo aplikacja sprawdza playery dla nieobejrzanych odcinkow.
+                        Filtrowanie po jezyku wydluza odswiezanie, bo aplikacja sprawdza playery dostepnych odcinkow.
                     </p>
                 {/if}
 
@@ -571,7 +570,6 @@
                     <select
                         class="select select-bordered w-full"
                         bind:value={draftSubtitleLanguage}
-                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
                     >
                         {#each subtitleLanguageOptions as option}
                             <option value={option.value}>{option.label}</option>
@@ -585,7 +583,6 @@
                         type="checkbox"
                         class="toggle toggle-primary"
                         bind:checked={draftExcludeAiSubtitles}
-                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
                     />
                 </label>
             </div>

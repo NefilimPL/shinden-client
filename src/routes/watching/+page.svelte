@@ -9,6 +9,7 @@
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import type { EpisodeProgress } from "$lib/types";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
+    import { enableIframeFullscreen } from "$lib/playerIframe";
 
     let isBuiltIn: boolean = $state(false);
     let iframeHtml: string = $state("");
@@ -173,7 +174,7 @@
 
                 isBuiltIn = true;
             } else {
-                iframeHtml = rawIframe;
+                iframeHtml = enableIframeFullscreen(rawIframe);
                 isBuiltIn = false;
                 log(LogLevel.INFO, "Using raw iframe");
             }
@@ -252,7 +253,7 @@
             </div>
             {:else}
             <div class="w-full h-full p-4 pb-28 md:p-6 md:pb-28 flex items-center justify-center">
-                <div class="w-full max-w-7xl max-h-full rounded-2xl shadow-2xl overflow-hidden [&>iframe]:block [&>iframe]:w-full [&>iframe]:aspect-video [&>iframe]:max-h-full">
+                <div class="h-full w-full overflow-hidden rounded-2xl shadow-2xl [&>iframe]:block [&>iframe]:h-full [&>iframe]:w-full [&>iframe]:border-0">
                     {@html iframeHtml}
                 </div>
             </div>
