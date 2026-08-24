@@ -8,7 +8,7 @@
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
     import { filterSearchAnime } from "$lib/searchFilters";
     globalStates.loadingState = LoadingState.LOADING;
 
@@ -111,8 +111,8 @@
         });
     }
 
-    function handleTitleAuxClick(event: MouseEvent, anime: SearchAnime) {
-        openTitleOnAuxClick(event, () => { void handleButton(anime); });
+    function handleTitleMouseDown(event: MouseEvent, anime: SearchAnime) {
+        openTitleOnMouseDown(event, () => { void handleButton(anime); });
     }
 </script>
 
@@ -171,7 +171,7 @@
                             class="btn btn-square btn-ghost"
                             aria-label="play"
                             onclick={async () => { await handleButton(anime); }}
-                            onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                            onmousedown={(event) => handleTitleMouseDown(event, anime)}
                         >
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
@@ -192,7 +192,7 @@
                                 class="text-left"
                                 disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
                                 onclick={async () => { await handleButton(anime); }}
-                                onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                                onmousedown={(event) => handleTitleMouseDown(event, anime)}
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
@@ -232,7 +232,7 @@
                                     aria-label="play"
                                     disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
                                     onclick={async () => { await handleButton(anime); }}
-                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
                                 >
                                     <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                                 </button>

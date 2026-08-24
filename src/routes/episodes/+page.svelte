@@ -45,6 +45,7 @@
                 url: params.seriesUrl,
                 titleId: params.titleId,
                 totalEpisodes: params.animeTotalEpisodes,
+                titleName: params.animeName,
             });
             params.episodeProgress = episodes;
             void loadEpisodeAvailability();

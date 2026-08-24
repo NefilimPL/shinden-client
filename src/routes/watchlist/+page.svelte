@@ -15,7 +15,7 @@
     } from "$lib/watchlistRefresh";
 
     import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
     const refreshStatusPollMs = 2000;
     const subtitleLanguageOptions = [
         { value: "PL", label: "Polski" },
@@ -327,8 +327,8 @@
         });
     }
 
-    function handleTitleAuxClick(event: MouseEvent, anime: WatchingAnime) {
-        openTitleOnAuxClick(event, () => { void handleButton(anime); });
+    function handleTitleMouseDown(event: MouseEvent, anime: WatchingAnime) {
+        openTitleOnMouseDown(event, () => { void handleButton(anime); });
     }
 </script>
 
@@ -485,7 +485,7 @@
                         class="btn btn-square btn-ghost"
                         aria-label="episodes"
                         onclick={async () => { await handleButton(anime); }}
-                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                        onmousedown={(event) => handleTitleMouseDown(event, anime)}
                     >
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                             <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -506,7 +506,7 @@
                                 data-debug-url={anime.url}
                                 class="text-left"
                                 onclick={async () => { await handleButton(anime); }}
-                                onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                                onmousedown={(event) => handleTitleMouseDown(event, anime)}
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
@@ -545,7 +545,7 @@
                                     class="btn btn-square btn-ghost btn-sm"
                                     aria-label="episodes"
                                     onclick={async () => { await handleButton(anime); }}
-                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
                                 >
                                     <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">

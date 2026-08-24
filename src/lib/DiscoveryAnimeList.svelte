@@ -6,7 +6,7 @@
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
     import Empty from "$lib/Empty.svelte";
 
     let {
@@ -80,8 +80,8 @@
         });
     }
 
-    function handleTitleAuxClick(event: MouseEvent, anime: DiscoveryAnime) {
-        openTitleOnAuxClick(event, () => { void openInApp(anime); });
+    function handleTitleMouseDown(event: MouseEvent, anime: DiscoveryAnime) {
+        openTitleOnMouseDown(event, () => { void openInApp(anime); });
     }
 
     async function openOnShinden(anime: DiscoveryAnime) {
@@ -153,7 +153,7 @@
                     aria-label="odcinki"
                     disabled={!statusTitleId(anime)}
                     onclick={() => { void openInApp(anime); }}
-                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
                 >
                     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -175,7 +175,7 @@
                         class="group text-left"
                         disabled={!statusTitleId(anime)}
                         onclick={() => { void openInApp(anime); }}
-                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                        onmousedown={(event) => handleTitleMouseDown(event, anime)}
                     >
                         <img
                             class="aspect-[2/3] w-full object-cover"

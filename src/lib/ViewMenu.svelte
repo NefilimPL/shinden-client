@@ -24,9 +24,11 @@
 
 <details class="dropdown dropdown-end">
     <summary class="btn btn-circle btn-sm" title="Opcje widoku" aria-label="Opcje widoku">
-        <svg class="size-[1.1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"></path>
-            <path d="m19.4 15 .1.1 1.3 1-2 3.4-1.6-.6a7.6 7.6 0 0 1-1.7 1l-.2 1.7h-4l-.2-1.7a7.6 7.6 0 0 1-1.7-1l-1.6.6-2-3.4 1.3-1 .1-.1a7 7 0 0 1 0-2l-.1-.1-1.3-1 2-3.4 1.6.6a7.6 7.6 0 0 1 1.7-1l1.6-.6 2 3.4-1.3 1-.1.1a7 7 0 0 1 0 2Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"></path>
+        <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+            <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
+                <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"></path>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 20 7.1l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1z"></path>
+            </g>
         </svg>
     </summary>
     <div class="dropdown-content z-50 mt-2 w-64 rounded-box bg-base-200 p-3 shadow-xl">

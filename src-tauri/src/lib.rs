@@ -104,9 +104,10 @@ async fn get_episodes_with_progress(
     url: String,
     title_id: Option<u64>,
     total_episodes: Option<u32>,
+    title_name: Option<String>,
 ) -> Result<Vec<EpisodeProgress>, String> {
     state
-        .get_episodes_with_progress(url, title_id, total_episodes)
+        .get_episodes_with_progress(url, title_id, total_episodes, title_name)
         .await
 }
 
