@@ -11,6 +11,7 @@ import {
   updateActiveTitleSession,
 } from "../src/lib/titleWorkspace.ts";
 
+import { titleTabPresentation } from "../src/lib/titleTabPresentation.ts";
 const kokoore = {
   titleId: 71632,
   name: "Kokoore",
@@ -106,4 +107,19 @@ test("returns a player session to episodes without changing its title context", 
   assert.equal(episodes.tabs[0].titleId, 71632);
   assert.equal(episodes.tabs[0].seriesUrl, kokoore.seriesUrl);
   assert.equal(episodes.tabs[0].currentEpisodeIndex, 3);
+});
+
+test("keeps horizontal active card labels visible while compacting inactive cards", () => {
+  assert.deepEqual(titleTabPresentation("vertical", false, false), {
+    showImage: true,
+    showLabel: false,
+  });
+  assert.deepEqual(titleTabPresentation("horizontal", false, true), {
+    showImage: true,
+    showLabel: false,
+  });
+  assert.deepEqual(titleTabPresentation("horizontal", true, true), {
+    showImage: true,
+    showLabel: true,
+  });
 });

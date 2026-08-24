@@ -5,10 +5,15 @@
     import { globalStates } from "$lib/global.svelte";
     import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
     import { startWatchlistBackgroundRefresh } from "$lib/watchlistRefresh";
+    import { page } from "$app/state";
+    import TitleTabs from "$lib/TitleTabs.svelte";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     let { children } = $props();
     let stopWatchlistBackgroundRefresh: (() => void) | null = null;
     let userAnimeListRefreshResumeStarted = false;
+    const titleRoutePaths = new Set(["/episodes", "/players", "/watching"]);
+    const isTitleRoute = $derived(titleRoutePaths.has(page.url.pathname));
 
     $effect(() => {
         if (globalStates.user.name && !stopWatchlistBackgroundRefresh) {
@@ -29,12 +34,23 @@
     });
 </script>
 
-<div class="h-screen flex flex-col bg-base-100">
-    <Navbar/>
-    <div class="flex-1 overflow-y-auto">
-        {@render children()}
-    </div>
+
+
+
+<div class="flex h-screen flex-col bg-base-100">
+    <Navbar />
+    {#if isTitleRoute && titleWorkspace.activeSession}
+        <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
+            <TitleTabs />
+            <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                {#key `${titleWorkspace.activeTitleId}:${titleWorkspace.activeSession.view}`}
+                    {@render children()}
+                {/key}
+            </div>
+        </div>
+    {:else}
+        <div class="flex-1 overflow-y-auto">
+            {@render children()}
+        </div>
+    {/if}
 </div>
-
-
-
