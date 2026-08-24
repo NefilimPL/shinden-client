@@ -1,11 +1,11 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { goto } from "$app/navigation";
     import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, DiscoveryAnime } from "$lib/types";
-    import { globalStates, params } from "$lib/global.svelte";
+    import { globalStates } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
+    import { openAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
 
     let {
@@ -68,14 +68,15 @@
             return;
         }
 
-        params.seriesUrl = anime.url;
-        params.titleId = titleId;
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+        await openAnimeTitle({
+            titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        });
     }
 
     async function openOnShinden(anime: DiscoveryAnime) {

@@ -7,6 +7,7 @@ import {
   createTitleWorkspaceState,
   openTitleSession,
   parseWorkspacePreferences,
+  setWorkspaceLayout,
   updateActiveTitleSession,
 } from "../src/lib/titleWorkspace.ts";
 
@@ -45,6 +46,17 @@ test("none layout replaces the active title session", () => {
   assert.equal(result.activeTitleId, 59922);
 });
 
+test("switching to none layout keeps only the active title session", () => {
+
+  const twoTabs = openTitleSession(
+    openTitleSession(createTitleWorkspaceState(), kokoore).state,
+    enen,
+  ).state;
+  const hidden = setWorkspaceLayout({ ...twoTabs, activeTitleId: 71632 }, "none");
+
+  assert.deepEqual(hidden.tabs.map((tab) => tab.titleId), [71632]);
+  assert.equal(hidden.activeTitleId, 71632);
+});
 test("closing the active card selects its nearest neighbor and final close empties the workspace", () => {
   const twoTabs = openTitleSession(
     openTitleSession(createTitleWorkspaceState(), kokoore).state,

@@ -132,7 +132,17 @@ export function setWorkspaceLayout(
     state: TitleWorkspaceState,
     layout: TitleWorkspaceLayout,
 ): TitleWorkspaceState {
-    return { ...state, layout };
+    if (layout !== "none") {
+        return { ...state, layout };
+    }
+
+    const active = activeTitleSession(state);
+    return {
+        ...state,
+        layout,
+        tabs: active ? [active] : [],
+        activeTitleId: active?.titleId ?? null,
+    };
 }
 
 export function setFullscreenPresentation(

@@ -1,9 +1,8 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
-    import { goto } from "$app/navigation";
     import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";
-    import { globalStates, LoadingState, params } from "$lib/global.svelte";
+    import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
@@ -14,6 +13,7 @@
         type WatchingCacheRefreshSummary,
     } from "$lib/watchlistRefresh";
 
+    import { openAnimeTitle } from "$lib/titleNavigation";
     const refreshStatusPollMs = 2000;
     const subtitleLanguageOptions = [
         { value: "PL", label: "Polski" },
@@ -307,14 +307,20 @@
     }
 
     async function handleButton(anime: WatchingAnime) {
-        params.seriesUrl = anime.url;
-        params.titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+        const titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
+        if (!titleId) {
+            return;
+        }
+
+        await openAnimeTitle({
+            titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        });
     }
 </script>
 

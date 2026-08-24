@@ -4,10 +4,10 @@
     import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
-    import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
+    import { openAnimeTitle } from "$lib/titleNavigation";
     globalStates.loadingState = LoadingState.LOADING;
 
     let result: Array<SearchAnime> = $state([]);
@@ -92,14 +92,20 @@
     }
 
     async function handleButton(anime: SearchAnime) {
-        params.seriesUrl = anime.url;
-        params.titleId = statusTitleId(anime);
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+        const titleId = statusTitleId(anime);
+        if (!titleId) {
+            return;
+        }
+
+        await openAnimeTitle({
+            titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        });
     }
 </script>
 

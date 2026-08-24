@@ -5,7 +5,7 @@
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions } from "$lib/shindenProgress";
-    import { getUserData, globalStates, LoadingState, params } from "$lib/global.svelte";
+    import { getUserData, globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import type {
         AnimeListViewMode,
@@ -28,6 +28,7 @@
         userAnimeListTypes,
     } from "$lib/userAnimeLists";
 
+    import { openAnimeTitle } from "$lib/titleNavigation";
     const viewModeStorageKey = "shinden:user-anime-lists-view-mode";
     const refreshStatusPollMs = 1500;
 
@@ -286,14 +287,15 @@
     }
 
     async function openEpisodes(anime: UserAnimeListItem) {
-        params.seriesUrl = anime.url;
-        params.titleId = anime.titleId;
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+        await openAnimeTitle({
+            titleId: anime.titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        });
     }
 </script>
 
