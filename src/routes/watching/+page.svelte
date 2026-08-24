@@ -4,7 +4,7 @@
     import { globalStates, LoadingState, params } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import * as dashjs from "dashjs";
-    import { goto } from "$app/navigation";
+    import { openActiveTitleView } from "$lib/titleNavigation";
     import { formatShindenCreatedTime } from "$lib/shindenProgress";
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import type { EpisodeProgress } from "$lib/types";
@@ -58,10 +58,18 @@
             return;
         }
 
-        params.currentEpisodeIndex = index;
-        params.playersUrl = episode.link;
-        params.playerId = "";
-        await goto("/players");
+        await openActiveTitleView("players", {
+            currentEpisodeIndex: index,
+            playersUrl: episode.link,
+            playerId: "",
+            episodeProgress: [...params.episodeProgress],
+        });
+    }
+
+    async function returnToAnime() {
+        await openActiveTitleView("episodes", {
+            episodeProgress: [...params.episodeProgress],
+        });
     }
 
     async function markCurrentEpisodeWatched() {
@@ -253,6 +261,12 @@
 
             {#if currentEpisode()}
                 <div class="fixed bottom-4 left-4 right-4 z-20 flex flex-col sm:flex-row items-center justify-center gap-2 rounded-box bg-base-300/95 border border-base-content/10 p-3 shadow-xl">
+                    <button
+                        class="btn btn-ghost btn-sm w-full sm:w-auto"
+                        onclick={() => { void returnToAnime(); }}
+                    >
+                        Wr?? do anime
+                    </button>
                     <button
                         class="btn btn-primary btn-sm w-full sm:w-auto"
                         disabled={progressWriteInProgress || !currentEpisode()?.episodeId}

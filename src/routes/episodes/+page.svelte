@@ -11,7 +11,7 @@
         RelatedSeries,
     } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
-    import {goto} from "$app/navigation";
+    import { openActiveTitleView, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
@@ -146,14 +146,15 @@
             return;
         }
 
-        params.seriesUrl = series.url;
-        params.titleId = titleId;
-        params.animeWatchStatus = "no";
-        params.animeIsFavourite = 0;
-        params.animeTotalEpisodes = null;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await loadEpisodes();
+        await openRelatedAnimeTitle({
+            titleId,
+            name: series.name,
+            imageUrl: series.imageUrl,
+            seriesUrl: series.url,
+            watchStatus: "no",
+            isFavourite: 0,
+            totalEpisodes: null,
+        });
     }
 
     function currentWatchStatus(): AnimeWatchStatus {
@@ -190,10 +191,12 @@
     }
 
     async function handleButton(episode: EpisodeProgress, index: number) {
-        params.playersUrl = episode.link;
-        params.episodeProgress = episodes;
-        params.currentEpisodeIndex = index;
-        await goto("/players");
+        await openActiveTitleView("players", {
+            playersUrl: episode.link,
+            episodeProgress: episodes,
+            currentEpisodeIndex: index,
+            playerId: "",
+        });
     }
 </script>
 
