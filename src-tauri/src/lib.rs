@@ -3,6 +3,7 @@ use shinden_pl_api::client_backend::{
     ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
     UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
+    WatchingEpisodeAvailability,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
@@ -161,6 +162,14 @@ fn get_watching_cache_refresh_status(
 }
 
 #[tauri::command]
+fn get_watching_episode_availability(
+    state: tauri::State<'_, ShindenClientBackend>,
+    title_id: u64,
+) -> Option<std::collections::HashMap<String, WatchingEpisodeAvailability>> {
+    state.get_watching_episode_availability(title_id)
+}
+
+#[tauri::command]
 async fn refresh_watching_anime_cache(
     state: tauri::State<'_, ShindenClientBackend>,
     filter: Option<WatchingAnimeFilter>,
@@ -312,6 +321,7 @@ pub fn run() {
             mark_episode_unwatched,
             get_watching_cache_refresh_status,
             refresh_watching_anime_cache,
+            get_watching_episode_availability,
             refresh_watching_anime_cache_item,
             login,
             logout,

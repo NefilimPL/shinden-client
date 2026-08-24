@@ -9,16 +9,15 @@
         AnimeRatingUpdate,
         AnimeWatchStatus,
         EpisodeProgress,
-        Player,
         RelatedSeries,
     } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import { openActiveTitleView, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
-    import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
+    import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings, refreshWatchingCacheTitleFromStoredSettings } from "$lib/watchlistRefresh";
     import AnimeDetailsPanel from "$lib/AnimeDetailsPanel.svelte";
-    import { episodeIsAvailableForFilter } from "$lib/episodeAvailability";
+    import { cachedEpisodeAvailabilityForFilter, type CachedEpisodeAvailability } from "$lib/cachedEpisodeAvailability";
 
     let episodes: EpisodeProgress[] = $state([]);
     let watchedUpdateInProgress: number | null = $state(null);
@@ -26,7 +25,7 @@
     let detailsLoading = $state(false);
     let statusUpdateInProgress = $state(false);
     let ratingInProgress: AnimeRatingKey | null = $state(null);
-    let episodeAvailability = $state<Record<string, boolean>>({});
+    let episodeAvailability = $state<Record<string, CachedEpisodeAvailability> | null>(null);
     let episodeAvailabilityLoading = $state(false);
 
     onMount(async () => {
@@ -59,24 +58,32 @@
     }
 
     async function loadEpisodeAvailability() {
-        const filter = loadWatchlistRefreshFilter();
         episodeAvailabilityLoading = true;
-        episodeAvailability = {};
+        try {
+            const titleId = params.titleId;
+            if (!titleId) {
+                episodeAvailability = null;
+                return;
+            }
 
-        const entries = await Promise.all(
-            episodes.map(async (episode) => {
-                try {
-                    const players = await invoke<Player[]>("get_players", { url: episode.link });
-                    const isUnwatchedFilterMatch = !filter.onlyAvailableUnwatched || !episode.watched;
-                    return [episode.link, isUnwatchedFilterMatch && episodeIsAvailableForFilter(players, filter)] as const;
-                } catch {
-                    return [episode.link, false] as const;
-                }
-            }),
-        );
+            let snapshot = await invoke<Record<string, CachedEpisodeAvailability> | null>(
+                "get_watching_episode_availability",
+                { titleId },
+            );
+            if (snapshot === null) {
+                await refreshWatchingCacheTitleFromStoredSettings(titleId, false);
+                snapshot = await invoke<Record<string, CachedEpisodeAvailability> | null>(
+                    "get_watching_episode_availability",
+                    { titleId },
+                );
+            }
 
-        episodeAvailability = Object.fromEntries(entries);
-        episodeAvailabilityLoading = false;
+            episodeAvailability = snapshot;
+        } catch {
+            episodeAvailability = null;
+        } finally {
+            episodeAvailabilityLoading = false;
+        }
     }
     async function loadAnimeDetails() {
         if (!params.seriesUrl) {
@@ -272,6 +279,7 @@
             </li>
 
             {#each episodes as episode, i}
+                {@const availabilityState = cachedEpisodeAvailabilityForFilter(episodeAvailability, episode.link, episode.watched, loadWatchlistRefreshFilter())}
                 <li class="list-row flex items-center justify-between">
                     <div class="text-4xl font-thin opacity-30 tabular-nums w-fit min-w-16 text-center">{i+1}</div>
                     <div class="list-col-grow flex-1">
@@ -283,10 +291,12 @@
                         </span>
                         {#if episodeAvailabilityLoading}
                             <span class="badge badge-ghost">Sprawdzam</span>
-                        {:else if episodeAvailability[episode.link] === true}
-                            <span class="badge badge-success">Dostepny</span>
-                        {:else if episodeAvailability[episode.link] === false}
-                            <span class="badge badge-ghost">Niedostepny</span>
+                        {:else if availabilityState === "available"}
+                            <span class="badge badge-success">Dost&#281;pny</span>
+                        {:else if availabilityState === "unavailable"}
+                            <span class="badge badge-ghost">Niedost&#281;pny</span>
+                        {:else}
+                            <span class="badge badge-ghost">Nie sprawdzono</span>
                         {/if}
 
                         <button
