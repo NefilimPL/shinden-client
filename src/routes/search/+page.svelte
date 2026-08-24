@@ -8,6 +8,7 @@
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import { openAnimeTitle } from "$lib/titleNavigation";
+    import { filterSearchAnime } from "$lib/searchFilters";
     globalStates.loadingState = LoadingState.LOADING;
 
     let result: Array<SearchAnime> = $state([]);
@@ -20,10 +21,11 @@
             loadViewMode();
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
-            result = await invoke<SearchAnime[]>("search", {
+            const searchResults = await invoke<SearchAnime[]>("search", {
                 query: params.animeName
             });
 
+            result = filterSearchAnime(searchResults, params.searchFilters);
             if (result.length > 0) {
                 result = result.sort((a, b) => {
                     let a_rating = Number(a.rating.replace(",", "."));

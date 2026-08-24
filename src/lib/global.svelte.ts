@@ -1,6 +1,10 @@
 import type {AnimeWatchStatus, EpisodeProgress, User} from "$lib/types";
 import {invoke} from "@tauri-apps/api/core";
 
+import {
+    defaultSearchFilters,
+    type SearchFilters,
+} from "$lib/searchFilters";
 export enum LoadingState {
     LOADING,
     WARNING,
@@ -36,6 +40,7 @@ export const params: {
 
     animeName: string;
     seriesUrl: string;
+    searchFilters: SearchFilters;
     playersUrl: string;
     playerId: string;
     titleId: number | null;
@@ -47,6 +52,7 @@ export const params: {
 } = $state({
     animeName: "",
     seriesUrl: "",
+    searchFilters: { ...defaultSearchFilters },
     playersUrl: "",
     playerId: "",
     titleId: null,

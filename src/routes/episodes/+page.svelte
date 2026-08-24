@@ -9,14 +9,16 @@
         AnimeRatingUpdate,
         AnimeWatchStatus,
         EpisodeProgress,
+        Player,
         RelatedSeries,
     } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import { openActiveTitleView, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
-    import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
+    import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import AnimeDetailsPanel from "$lib/AnimeDetailsPanel.svelte";
+    import { episodeIsAvailableForFilter } from "$lib/episodeAvailability";
 
     let episodes: EpisodeProgress[] = $state([]);
     let watchedUpdateInProgress: number | null = $state(null);
@@ -24,6 +26,8 @@
     let detailsLoading = $state(false);
     let statusUpdateInProgress = $state(false);
     let ratingInProgress: AnimeRatingKey | null = $state(null);
+    let episodeAvailability = $state<Record<string, boolean>>({});
+    let episodeAvailabilityLoading = $state(false);
 
     onMount(async () => {
         await loadEpisodes();
@@ -44,6 +48,7 @@
                 totalEpisodes: params.animeTotalEpisodes,
             });
             params.episodeProgress = episodes;
+            void loadEpisodeAvailability();
             await loadAnimeDetails();
             globalStates.loadingState = LoadingState.OK;
             log(LogLevel.SUCCESS, "Loaded episodes successfully");
@@ -53,6 +58,26 @@
         }
     }
 
+    async function loadEpisodeAvailability() {
+        const filter = loadWatchlistRefreshFilter();
+        episodeAvailabilityLoading = true;
+        episodeAvailability = {};
+
+        const entries = await Promise.all(
+            episodes.map(async (episode) => {
+                try {
+                    const players = await invoke<Player[]>("get_players", { url: episode.link });
+                    const isUnwatchedFilterMatch = !filter.onlyAvailableUnwatched || !episode.watched;
+                    return [episode.link, isUnwatchedFilterMatch && episodeIsAvailableForFilter(players, filter)] as const;
+                } catch {
+                    return [episode.link, false] as const;
+                }
+            }),
+        );
+
+        episodeAvailability = Object.fromEntries(entries);
+        episodeAvailabilityLoading = false;
+    }
     async function loadAnimeDetails() {
         if (!params.seriesUrl) {
             details = null;
@@ -256,6 +281,13 @@
                         <span class={`badge ${episode.watched ? "badge-success" : "badge-ghost"}`}>
                             {episode.watched ? "Obejrzany" : "Nieobejrzany"}
                         </span>
+                        {#if episodeAvailabilityLoading}
+                            <span class="badge badge-ghost">Sprawdzam</span>
+                        {:else if episodeAvailability[episode.link] === true}
+                            <span class="badge badge-success">Dostepny</span>
+                        {:else if episodeAvailability[episode.link] === false}
+                            <span class="badge badge-ghost">Niedostepny</span>
+                        {/if}
 
                         <button
                             class="btn btn-sm btn-ghost"

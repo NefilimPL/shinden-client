@@ -1,6 +1,7 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
+    import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";
     import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
@@ -30,6 +31,7 @@
         skipped: 0,
         failed: 0,
         currentTitle: "",
+        failures: [],
         lastFinishedAtMs: null,
         lastError: null,
     };
@@ -168,6 +170,7 @@
                 skipped: 0,
                 failed: 0,
                 currentTitle: "",
+                failures: [],
                 lastError: null,
             };
             lastSeenRefreshed = 0;
@@ -374,6 +377,30 @@
                     <div class="text-xs text-warning truncate">
                         {formatRefreshError(refreshStatus.lastError)}
                     </div>
+                {/if}
+                {#if refreshStatus.failures.length > 0}
+                    <details class="mt-2 rounded-box border border-warning/30 bg-warning/5 p-2 text-xs">
+                        <summary class="cursor-pointer text-warning">
+                            Nie udalo sie sprawdzic {refreshStatus.failures.length} pozycji
+                        </summary>
+                        <ul class="mt-2 flex flex-col gap-2">
+                            {#each refreshStatus.failures as failure}
+                                <li class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="truncate font-medium">{failure.title}</div>
+                                        <div class="truncate opacity-70" title={failure.reason}>{failure.reason}</div>
+                                    </div>
+                                    <button
+                                        class="btn btn-ghost btn-xs shrink-0"
+                                        title="Otworz anime w Shinden"
+                                        onclick={() => { void openUrl(failure.seriesUrl); }}
+                                    >
+                                        WWW
+                                    </button>
+                                </li>
+                            {/each}
+                        </ul>
+                    </details>
                 {/if}
             </div>
 
