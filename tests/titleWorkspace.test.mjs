@@ -154,13 +154,22 @@ test("keeps horizontal active card labels visible while compacting inactive card
   assert.deepEqual(titleTabPresentation("vertical", false, false), {
     showImage: true,
     showLabel: false,
+    showClose: false,
   });
   assert.deepEqual(titleTabPresentation("horizontal", false, true), {
     showImage: true,
     showLabel: false,
+    showClose: true,
   });
   assert.deepEqual(titleTabPresentation("horizontal", true, true), {
     showImage: true,
     showLabel: true,
+    showClose: true,
   });
+});
+
+test("shows the vertical card close control only for the active title", () => {
+  assert.equal(titleTabPresentation("vertical", false, false).showClose, false);
+  assert.equal(titleTabPresentation("vertical", true, false).showClose, true);
+  assert.equal(titleTabPresentation("horizontal", false, false).showClose, true);
 });

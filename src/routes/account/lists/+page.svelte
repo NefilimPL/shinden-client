@@ -29,6 +29,7 @@
     } from "$lib/userAnimeLists";
 
     import { openAnimeTitle } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
     const viewModeStorageKey = "shinden:user-anime-lists-view-mode";
     const refreshStatusPollMs = 1500;
 
@@ -297,6 +298,10 @@
             totalEpisodes: anime.totalEpisodes,
         });
     }
+
+    function handleTitleAuxClick(event: MouseEvent, anime: UserAnimeListItem) {
+        openTitleOnAuxClick(event, () => { void openEpisodes(anime); });
+    }
 </script>
 
 {#if globalStates.loadingState === LoadingState.LOADING && items.length === 0}
@@ -532,6 +537,7 @@
                                     class="btn btn-square btn-ghost"
                                     aria-label="odcinki"
                                     onclick={() => { void openEpisodes(anime); }}
+                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >
                                     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -551,6 +557,7 @@
                                         type="button"
                                         class="text-left"
                                         onclick={() => { void openEpisodes(anime); }}
+                                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                     >
                                         <img
                                             class="aspect-[2/3] w-full object-cover"
@@ -589,6 +596,7 @@
                                             class="btn btn-square btn-ghost btn-sm"
                                             aria-label="odcinki"
                                             onclick={() => { void openEpisodes(anime); }}
+                                            onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                         >
                                             <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                                 <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
