@@ -431,33 +431,55 @@ class BuildExePlanTests(unittest.TestCase):
                 ],
             )
 
-    def test_prepare_backend_source_uses_local_fallback_when_remote_fails(self):
+    def test_prepare_backend_source_prefers_matching_local_repo_without_remote_fetch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "shinden-client"
             root.mkdir()
             local_backend = root.parent / "shinden-pl-api-rs"
             local_backend.mkdir()
             (local_backend / "Cargo.toml").write_text("[package]\nname = \"shinden-pl-api\"\n", encoding="utf-8")
+            commands = []
 
-            def failing_runner(command, *, cwd, env, log_file):
-                raise build_exe.BuildError("clone failed")
+            def tracking_runner(command, *, cwd, env, log_file):
+                commands.append(command)
+                raise build_exe.BuildError("remote fetch must not run")
 
-            def failing_downloader(url, destination):
-                raise OSError("archive failed")
+            def tracking_downloader(url, destination):
+                commands.append(["archive", url])
+                raise build_exe.BuildError("archive download must not run")
 
             source = build_exe.prepare_backend_source(
                 root,
                 branch="dev",
                 log_file=io.StringIO(),
-                command_runner=failing_runner,
+                command_runner=tracking_runner,
                 git_command="git",
-                archive_downloader=failing_downloader,
+                archive_downloader=tracking_downloader,
             )
 
             self.assertEqual(source.path, local_backend)
             self.assertEqual(source.branch, "dev")
             self.assertTrue(source.is_local_fallback)
+            self.assertIsNone(source.temporary_root)
+            self.assertEqual(commands, [])
 
+
+    def test_cleanup_keeps_stale_cache_when_local_backend_was_used(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            root.mkdir()
+            stale_cache = root / "cache" / "backend-source" / "locked-file"
+            stale_cache.parent.mkdir(parents=True)
+            stale_cache.write_text("keep", encoding="utf-8")
+            source = build_exe.PreparedBackendSource(
+                path=root.parent / "shinden-pl-api-rs",
+                branch="dev",
+                is_local_fallback=True,
+            )
+
+            build_exe.clean_prepared_backend_source(root, source, io.StringIO())
+
+            self.assertTrue(stale_cache.exists())
     def test_backend_manifest_rewrite_and_restore(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "shinden-client"
@@ -479,6 +501,10 @@ class BuildExePlanTests(unittest.TestCase):
                 ]
             )
             manifest.write_text(original, encoding="utf-8")
+            cargo_lock = manifest.parent / "Cargo.lock"
+            original_lock = "[[package]]\nname = \"ShindenClient\"\nversion = \"4.0.3\"\n"
+            cargo_lock.write_text(original_lock, encoding="utf-8")
+
 
             backup_path = build_exe.rewrite_backend_dependency_path(root, backend_path)
 
@@ -489,11 +515,15 @@ class BuildExePlanTests(unittest.TestCase):
             self.assertIn('serde_json = "1"', rewritten)
             self.assertEqual(backup_path, root / "logs" / "Cargo.toml.build-exe.bak")
             self.assertEqual(backup_path.read_text(encoding="utf-8"), original)
+            cargo_lock.write_text("[[package]]\nname = \"ShindenClient\"\nversion = \"0.0.0\"\n", encoding="utf-8")
+
 
             build_exe.restore_backend_manifest(root, backup_path)
 
             self.assertEqual(manifest.read_text(encoding="utf-8"), original)
             self.assertFalse(backup_path.exists())
+            self.assertEqual(cargo_lock.read_text(encoding="utf-8"), original_lock)
+            self.assertFalse((root / "logs" / "Cargo.lock.build-exe.bak").exists())
 
     def test_preflight_does_not_fail_when_backend_needs_github_archive_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
