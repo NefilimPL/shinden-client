@@ -1,6 +1,12 @@
 import type { AnimeWatchStatus, EpisodeProgress } from "./types";
 
 export type TitleView = "episodes" | "players" | "watching";
+export type BaseViewPath = "/" | "/watchlist";
+export type BaseViewContext = {
+    path: BaseViewPath;
+    scrollY: number;
+};
+
 export type TitleWorkspaceLayout = "vertical" | "horizontal" | "none";
 export type FullscreenPresentation = "immersive" | "taskbar";
 
@@ -28,6 +34,7 @@ export type TitleSession = TitleOpenInput & {
 };
 
 export type TitleWorkspaceState = TitleWorkspacePreferences & {
+    baseView: BaseViewContext;
     tabs: TitleSession[];
     activeTitleId: number | null;
 };
@@ -55,11 +62,33 @@ export function parseWorkspacePreferences(value: string | null | undefined): Tit
     }
 }
 
+export function workspacePreferencesForStorage(
+    state: TitleWorkspaceState,
+): TitleWorkspacePreferences {
+    return {
+        layout: state.layout,
+        fullscreenPresentation: state.fullscreenPresentation,
+    };
+}
+
+
+export function baseViewContextForRoute(path: string, scrollY: number): BaseViewContext | null {
+    if (path !== "/" && path !== "/watchlist") {
+        return null;
+    }
+
+    return {
+        path,
+        scrollY: Number.isFinite(scrollY) ? Math.max(0, scrollY) : 0,
+    };
+}
+
 export function createTitleWorkspaceState(
     preferences: Partial<TitleWorkspacePreferences> = {},
 ): TitleWorkspaceState {
     return {
         tabs: [],
+        baseView: { path: "/", scrollY: 0 },
         activeTitleId: null,
         layout: isWorkspaceLayout(preferences.layout) ? preferences.layout : defaultPreferences.layout,
         fullscreenPresentation: isFullscreenPresentation(preferences.fullscreenPresentation)
@@ -93,6 +122,13 @@ export function activateTitleSession(state: TitleWorkspaceState, titleId: number
     return { ...state, activeTitleId: titleId };
 }
 
+
+export function saveBaseViewContext(
+    state: TitleWorkspaceState,
+    baseView: BaseViewContext,
+): TitleWorkspaceState {
+    return { ...state, baseView };
+}
 export function closeTitleSession(state: TitleWorkspaceState, titleId: number): TitleWorkspaceState {
     const index = state.tabs.findIndex((tab) => tab.titleId === titleId);
     if (index < 0) {

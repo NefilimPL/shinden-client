@@ -5,9 +5,12 @@ import {
     createTitleWorkspaceState,
     openTitleSession,
     parseWorkspacePreferences,
+    saveBaseViewContext,
     setFullscreenPresentation,
     setWorkspaceLayout,
     updateActiveTitleSession,
+    workspacePreferencesForStorage,
+    type BaseViewContext,
     type FullscreenPresentation,
     type TitleOpenInput,
     type TitleSession,
@@ -43,6 +46,10 @@ export const titleWorkspace = {
     get fullscreenPresentation() {
         return state.fullscreenPresentation;
     },
+    get baseView() {
+        return state.baseView;
+    },
+
 
     open(input: TitleOpenInput) {
         const result = openTitleSession(state, input);
@@ -61,6 +68,11 @@ export const titleWorkspace = {
     close(titleId: number) {
         state = closeTitleSession(state, titleId);
         return activeTitleSession(state);
+    },
+
+    saveBaseView(context: BaseViewContext) {
+        state = saveBaseViewContext(state, context);
+        return state.baseView;
     },
 
     saveActiveContext(context: TitleNavigationContext, view?: TitleView) {
@@ -109,8 +121,5 @@ function savePreferences() {
         return;
     }
 
-    localStorage.setItem(preferencesStorageKey, JSON.stringify({
-        layout: state.layout,
-        fullscreenPresentation: state.fullscreenPresentation,
-    }));
+    localStorage.setItem(preferencesStorageKey, JSON.stringify(workspacePreferencesForStorage(state)));
 }

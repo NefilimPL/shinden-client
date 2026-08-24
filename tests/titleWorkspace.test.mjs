@@ -3,12 +3,15 @@ import { test } from "node:test";
 
 import {
   activateTitleSession,
+  baseViewContextForRoute,
   closeTitleSession,
   createTitleWorkspaceState,
   openTitleSession,
   parseWorkspacePreferences,
+  saveBaseViewContext,
   setWorkspaceLayout,
   updateActiveTitleSession,
+  workspacePreferencesForStorage,
 } from "../src/lib/titleWorkspace.ts";
 
 import { titleTabPresentation } from "../src/lib/titleTabPresentation.ts";
@@ -69,6 +72,44 @@ test("closing the active card selects its nearest neighbor and final close empti
   assert.equal(afterFirstClose.activeTitleId, 59922);
   assert.deepEqual(afterFinalClose.tabs, []);
   assert.equal(afterFinalClose.activeTitleId, null);
+});
+
+test("closing the final title keeps the last base view context", () => {
+  const withBaseView = saveBaseViewContext(createTitleWorkspaceState(), {
+    path: "/watchlist",
+    scrollY: 380,
+  });
+  const opened = openTitleSession(withBaseView, kokoore).state;
+  const closed = closeTitleSession(opened, kokoore.titleId);
+
+  assert.equal(closed.activeTitleId, null);
+  assert.deepEqual(closed.baseView, { path: "/watchlist", scrollY: 380 });
+});
+
+test("workspace preferences never include transient title or base sessions", () => {
+  const withBaseView = saveBaseViewContext(createTitleWorkspaceState(), {
+    path: "/watchlist",
+    scrollY: 380,
+  });
+  const state = openTitleSession(withBaseView, kokoore).state;
+
+  assert.deepEqual(workspacePreferencesForStorage(state), {
+    layout: "vertical",
+    fullscreenPresentation: "immersive",
+  });
+});
+
+test("only the home and watchlist routes become a base view", () => {
+  assert.deepEqual(baseViewContextForRoute("/", 12), {
+    path: "/",
+    scrollY: 12,
+  });
+  assert.deepEqual(baseViewContextForRoute("/watchlist", 380), {
+    path: "/watchlist",
+    scrollY: 380,
+  });
+  assert.equal(baseViewContextForRoute("/search", 24), null);
+  assert.equal(baseViewContextForRoute("/episodes", 24), null);
 });
 
 test("invalid persisted view preferences use the documented defaults", () => {

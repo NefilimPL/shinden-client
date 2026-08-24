@@ -49,7 +49,7 @@
             </div>
         </div>
     {:else}
-        <div class="flex-1 overflow-y-auto">
+        <div class="flex-1 overflow-y-auto" data-base-view-scroll>
             {@render children()}
         </div>
     {/if}
