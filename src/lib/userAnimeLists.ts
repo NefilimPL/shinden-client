@@ -89,6 +89,11 @@ export function userAnimeListAgeRatings(items: UserAnimeListItem[]): string[] {
     ).sort((a, b) => a.localeCompare(b));
 }
 
+export function userAnimeListNeedsAgeMetadataRefresh(items: UserAnimeListItem[]): boolean {
+    return items.some((item) => item.active)
+        && userAnimeListAgeRatings(items).length === 0;
+}
+
 export function countUserAnimeListStatuses(items: UserAnimeListItem[]): UserAnimeListCounts {
     const counts: UserAnimeListCounts = {
         inProgress: 0,

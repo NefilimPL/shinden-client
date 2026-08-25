@@ -347,6 +347,20 @@ def clean_backend_source_temp(root: Path) -> None:
     if temp_root.exists():
         shutil.rmtree(temp_root)
 
+def clean_prepared_backend_source(
+    root: Path,
+    source: PreparedBackendSource | None,
+    log_file,
+) -> None:
+    if source is None or source.temporary_root is None:
+        return
+
+    try:
+        clean_backend_source_temp(root)
+    except OSError as error:
+        write_log(log_file, f"Warning: could not clean temporary backend source: {error}")
+
+
 
 def prepare_backend_source(
     root: Path,
@@ -365,6 +379,14 @@ def prepare_backend_source(
     runner = command_runner or run_command
     remote_errors: list[str] = []
     requested_branch = branch.strip() or "Main"
+    if backend_repo_exists(local_fallback):
+        write_log(log_file, f"Using local backend source: {local_fallback}")
+        return PreparedBackendSource(
+            path=local_fallback,
+            branch=requested_branch,
+            is_local_fallback=True,
+        )
+
 
     clean_backend_source_temp(root)
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -482,6 +504,14 @@ def cargo_manifest_path(root: Path) -> Path:
     return root / "src-tauri" / "Cargo.toml"
 
 
+def cargo_lock_path(root: Path) -> Path:
+    return root / "src-tauri" / "Cargo.lock"
+
+
+def cargo_lock_backup_path(root: Path) -> Path:
+    return root / "logs" / "Cargo.lock.build-exe.bak"
+
+
 def backend_manifest_backup_path(root: Path) -> Path:
     return root / "logs" / "Cargo.toml.build-exe.bak"
 
@@ -493,12 +523,16 @@ def cargo_path_value(path: Path) -> str:
 def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
     manifest_path = cargo_manifest_path(root)
     backup_path = backend_manifest_backup_path(root)
+    lock_path = cargo_lock_path(root)
+    lock_backup_path = cargo_lock_backup_path(root)
     if backup_path.exists():
         restore_backend_manifest(root, backup_path)
 
     original = manifest_path.read_text(encoding="utf-8")
     backup_path.parent.mkdir(parents=True, exist_ok=True)
     backup_path.write_text(original, encoding="utf-8")
+    if lock_path.exists():
+        lock_backup_path.write_text(lock_path.read_text(encoding="utf-8"), encoding="utf-8")
 
     dependency_pattern = re.compile(
         r'(?m)^(\s*shinden-pl-api\s*=\s*\{[^}\n]*path\s*=\s*")[^"]+("[^}\n]*\}\s*)$'
@@ -509,6 +543,7 @@ def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
     )
     if replacements != 1:
         backup_path.unlink(missing_ok=True)
+        lock_backup_path.unlink(missing_ok=True)
         raise BuildError(f"Could not find exactly one shinden-pl-api path dependency in {manifest_path}")
 
     package_version_pattern = re.compile(
@@ -521,6 +556,7 @@ def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
     )
     if version_replacements != 1:
         backup_path.unlink(missing_ok=True)
+        lock_backup_path.unlink(missing_ok=True)
         raise BuildError(f"Could not find package version in {manifest_path}")
 
     manifest_path.write_text(rewritten, encoding="utf-8")
@@ -529,12 +565,13 @@ def rewrite_backend_dependency_path(root: Path, backend_path: Path) -> Path:
 
 def restore_backend_manifest(root: Path, backup_path: Path | None = None) -> None:
     manifest_backup = backup_path or backend_manifest_backup_path(root)
-    if not manifest_backup.exists():
-        return
-
-    cargo_manifest_path(root).write_text(manifest_backup.read_text(encoding="utf-8"), encoding="utf-8")
-    manifest_backup.unlink()
-
+    lock_backup = cargo_lock_backup_path(root)
+    if manifest_backup.exists():
+        cargo_manifest_path(root).write_text(manifest_backup.read_text(encoding="utf-8"), encoding="utf-8")
+        manifest_backup.unlink()
+    if lock_backup.exists():
+        cargo_lock_path(root).write_text(lock_backup.read_text(encoding="utf-8"), encoding="utf-8")
+        lock_backup.unlink()
 
 def write_local_tauri_config(root: Path) -> Path:
     config_path = root / "logs" / "tauri-local-build.conf.json"
@@ -825,6 +862,7 @@ def main(
             clean_dist(root, dist_dir)
 
         manifest_backup: Path | None = None
+        prepared_backend: PreparedBackendSource | None = None
         try:
             prepared_backend = prepare_backend_source(
                 root,
@@ -860,7 +898,7 @@ def main(
                 write_log(log_file, f"  {artifact}")
         finally:
             restore_backend_manifest(root, manifest_backup)
-            clean_backend_source_temp(root)
+            clean_prepared_backend_source(root, prepared_backend, log_file)
 
     return 0
 

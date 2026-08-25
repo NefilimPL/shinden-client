@@ -1,11 +1,13 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import type { AnimeListViewMode, DiscoveryAnime, SeasonOption, SeasonSlug } from "$lib/types";
     import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import DiscoveryAnimeList from "$lib/DiscoveryAnimeList.svelte";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
+    import { baseViewForPath } from "$lib/baseViewState";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     const seasonOptions: SeasonOption[] = [
         { value: "current", label: "Obecny sezon" },
@@ -20,12 +22,38 @@
     let result: DiscoveryAnime[] = $state([]);
     let loading = $state(false);
     let viewMode: AnimeListViewMode = $state("list");
+    let baseStateRestored = $state(false);
     const viewModeStorageKey = "shinden:season-view-mode";
 
     onMount(() => {
         loadViewMode();
+        restoreBaseState();
+        baseStateRestored = true;
         void loadSeasonAnime();
     });
+
+    $effect(() => {
+        if (!baseStateRestored) return;
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/seasons", { year, season, viewMode }, 0)));
+    });
+
+    function restoreBaseState() {
+        if (titleWorkspace.baseView.id !== "seasons") {
+            return;
+        }
+
+        const state = titleWorkspace.baseView.state;
+        if (typeof state.year === "number" && Number.isFinite(state.year)) {
+            year = state.year;
+        }
+        if (state.season === "current" || state.season === "winter" || state.season === "spring"
+            || state.season === "summer" || state.season === "fall") {
+            season = state.season;
+        }
+        if (state.viewMode === "grid" || state.viewMode === "list") {
+            viewMode = state.viewMode;
+        }
+    }
 
     function loadViewMode() {
         const stored = localStorage.getItem(viewModeStorageKey);
@@ -67,7 +95,7 @@
     }
 </script>
 
-<div class="flex h-full w-full flex-col gap-3 overflow-y-scroll p-4">
+<div class="flex h-full w-full flex-col gap-3 overflow-y-scroll p-4" data-base-view-scroll>
     <section class="flex flex-col gap-3 bg-base-100 rounded-box shadow-md p-4">
         <div>
             <div class="text-xs opacity-60 tracking-wide uppercase">Sezony anime</div>

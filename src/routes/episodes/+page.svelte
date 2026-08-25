@@ -1,6 +1,7 @@
 <script lang="ts">
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {onMount} from "svelte";
+    import { openUrl } from "@tauri-apps/plugin-opener";
     import {invoke} from "@tauri-apps/api/core";
     import type {
         AnimeDetails,
@@ -11,11 +12,12 @@
         RelatedSeries,
     } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
-    import {goto} from "$app/navigation";
+    import { openActiveTitleView, openAnimeTitleInBackground, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
-    import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
+    import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings, refreshWatchingCacheTitleFromStoredSettings } from "$lib/watchlistRefresh";
     import AnimeDetailsPanel from "$lib/AnimeDetailsPanel.svelte";
+    import { cachedEpisodeAvailabilityForFilter, type CachedEpisodeAvailability } from "$lib/cachedEpisodeAvailability";
 
     let episodes: EpisodeProgress[] = $state([]);
     let watchedUpdateInProgress: number | null = $state(null);
@@ -23,6 +25,8 @@
     let detailsLoading = $state(false);
     let statusUpdateInProgress = $state(false);
     let ratingInProgress: AnimeRatingKey | null = $state(null);
+    let episodeAvailability = $state<Record<string, CachedEpisodeAvailability> | null>(null);
+    let episodeAvailabilityLoading = $state(false);
 
     onMount(async () => {
         await loadEpisodes();
@@ -41,8 +45,10 @@
                 url: params.seriesUrl,
                 titleId: params.titleId,
                 totalEpisodes: params.animeTotalEpisodes,
+                titleName: params.animeName,
             });
             params.episodeProgress = episodes;
+            void loadEpisodeAvailability();
             await loadAnimeDetails();
             globalStates.loadingState = LoadingState.OK;
             log(LogLevel.SUCCESS, "Loaded episodes successfully");
@@ -52,6 +58,34 @@
         }
     }
 
+    async function loadEpisodeAvailability() {
+        episodeAvailabilityLoading = true;
+        try {
+            const titleId = params.titleId;
+            if (!titleId) {
+                episodeAvailability = null;
+                return;
+            }
+
+            let snapshot = await invoke<Record<string, CachedEpisodeAvailability> | null>(
+                "get_watching_episode_availability",
+                { titleId },
+            );
+            if (snapshot === null) {
+                await refreshWatchingCacheTitleFromStoredSettings(titleId, false);
+                snapshot = await invoke<Record<string, CachedEpisodeAvailability> | null>(
+                    "get_watching_episode_availability",
+                    { titleId },
+                );
+            }
+
+            episodeAvailability = snapshot;
+        } catch {
+            episodeAvailability = null;
+        } finally {
+            episodeAvailabilityLoading = false;
+        }
+    }
     async function loadAnimeDetails() {
         if (!params.seriesUrl) {
             details = null;
@@ -140,22 +174,35 @@
         }
     }
 
-    async function openRelatedSeries(series: RelatedSeries) {
+    async function openRelatedSeries(series: RelatedSeries, background = false) {
         const titleId = titleIdFromSeriesUrl(series.url);
         if (!titleId) {
             return;
         }
 
-        params.seriesUrl = series.url;
-        params.titleId = titleId;
-        params.animeWatchStatus = "no";
-        params.animeIsFavourite = 0;
-        params.animeTotalEpisodes = null;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await loadEpisodes();
+        const input = {
+            titleId,
+            name: series.name,
+            imageUrl: series.imageUrl,
+            seriesUrl: series.url,
+            watchStatus: "no" as AnimeWatchStatus,
+            isFavourite: 0,
+            totalEpisodes: null,
+        };
+        if (background) {
+            await openAnimeTitleInBackground(input);
+            return;
+        }
+        await openRelatedAnimeTitle(input);
     }
 
+    async function openOnShinden() {
+        if (!params.seriesUrl) {
+            return;
+        }
+
+        await openUrl(params.seriesUrl);
+    }
     function currentWatchStatus(): AnimeWatchStatus {
         return params.animeWatchStatus || "no";
     }
@@ -190,10 +237,12 @@
     }
 
     async function handleButton(episode: EpisodeProgress, index: number) {
-        params.playersUrl = episode.link;
-        params.episodeProgress = episodes;
-        params.currentEpisodeIndex = index;
-        await goto("/players");
+        await openActiveTitleView("players", {
+            playersUrl: episode.link,
+            episodeProgress: episodes,
+            currentEpisodeIndex: index,
+            playerId: "",
+        });
     }
 </script>
 
@@ -220,6 +269,8 @@
                 onStatusChange={(status) => { void updateAnimeStatus(status); }}
                 onRatingChange={(ratingType, value) => { void updateAnimeRating(ratingType, value); }}
                 onOpenRelated={(series) => { void openRelatedSeries(series); }}
+                onOpenRelatedInBackground={(series) => { void openRelatedSeries(series, true); }}
+                onOpenOnShinden={() => { void openOnShinden(); }}
             />
         {/if}
 
@@ -235,6 +286,7 @@
             </li>
 
             {#each episodes as episode, i}
+                {@const availabilityState = cachedEpisodeAvailabilityForFilter(episodeAvailability, episode.link, episode.watched, loadWatchlistRefreshFilter())}
                 <li class="list-row flex items-center justify-between">
                     <div class="text-4xl font-thin opacity-30 tabular-nums w-fit min-w-16 text-center">{i+1}</div>
                     <div class="list-col-grow flex-1">
@@ -244,6 +296,15 @@
                         <span class={`badge ${episode.watched ? "badge-success" : "badge-ghost"}`}>
                             {episode.watched ? "Obejrzany" : "Nieobejrzany"}
                         </span>
+                        {#if episodeAvailabilityLoading}
+                            <span class="badge badge-ghost">Sprawdzam</span>
+                        {:else if availabilityState === "available"}
+                            <span class="badge badge-success">Dost&#281;pny</span>
+                        {:else if availabilityState === "unavailable"}
+                            <span class="badge badge-ghost">Niedost&#281;pny</span>
+                        {:else}
+                            <span class="badge badge-ghost">Nie sprawdzono</span>
+                        {/if}
 
                         <button
                             class="btn btn-sm btn-ghost"

@@ -1,9 +1,9 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
-    import { goto } from "$app/navigation";
+    import { onMount, untrack } from "svelte";
+    import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";
-    import { globalStates, LoadingState, params } from "$lib/global.svelte";
+    import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
@@ -14,6 +14,10 @@
         type WatchingCacheRefreshSummary,
     } from "$lib/watchlistRefresh";
 
+    import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { baseViewForPath } from "$lib/baseViewState";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     const refreshStatusPollMs = 2000;
     const subtitleLanguageOptions = [
         { value: "PL", label: "Polski" },
@@ -30,6 +34,7 @@
         skipped: 0,
         failed: 0,
         currentTitle: "",
+        failures: [],
         lastFinishedAtMs: null,
         lastError: null,
     };
@@ -51,11 +56,14 @@
     let refreshStatusInitialized = $state(false);
     let silentReloadInProgress = $state(false);
     let viewMode: AnimeListViewMode = $state("list");
+    let baseStateRestored = $state(false);
     const viewModeStorageKey = "shinden:watchlist-view-mode";
 
     onMount(() => {
         loadSettings();
         loadViewMode();
+        restoreBaseState();
+        baseStateRestored = true;
         void loadWatchingAnime();
         void pollRefreshStatus();
 
@@ -67,6 +75,32 @@
             window.clearInterval(statusTimer);
         };
     });
+
+    $effect(() => {
+        if (!baseStateRestored) return;
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/watchlist", {
+            viewMode,
+            onlyAvailableUnwatched,
+            subtitleLanguage,
+            checkSubtitleAvailabilityOnline,
+            excludeAiSubtitles,
+        }, 0)));
+    });
+
+    function restoreBaseState() {
+        if (titleWorkspace.baseView.id !== "watchlist") {
+            return;
+        }
+
+        const state = titleWorkspace.baseView.state;
+        if (state.viewMode === "grid" || state.viewMode === "list") viewMode = state.viewMode;
+        if (typeof state.onlyAvailableUnwatched === "boolean") onlyAvailableUnwatched = state.onlyAvailableUnwatched;
+        if (typeof state.subtitleLanguage === "string") subtitleLanguage = state.subtitleLanguage;
+        if (typeof state.checkSubtitleAvailabilityOnline === "boolean") {
+            checkSubtitleAvailabilityOnline = state.checkSubtitleAvailabilityOnline;
+        }
+        if (typeof state.excludeAiSubtitles === "boolean") excludeAiSubtitles = state.excludeAiSubtitles;
+    }
 
     function loadViewMode() {
         const stored = localStorage.getItem(viewModeStorageKey);
@@ -168,6 +202,7 @@
                 skipped: 0,
                 failed: 0,
                 currentTitle: "",
+                failures: [],
                 lastError: null,
             };
             lastSeenRefreshed = 0;
@@ -306,15 +341,26 @@
         await updateStatus(anime, status);
     }
 
-    async function handleButton(anime: WatchingAnime) {
-        params.seriesUrl = anime.url;
-        params.titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+    async function handleButton(anime: WatchingAnime, background = false) {
+        const titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
+        if (!titleId) {
+            return;
+        }
+
+        const input = {
+            titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        };
+        await (background ? openAnimeTitleInBackground(input) : openAnimeTitle(input));
+    }
+
+    function handleTitleAuxClick(event: MouseEvent, anime: WatchingAnime) {
+        openTitleOnAuxClick(event, () => { void handleButton(anime, true); });
     }
 </script>
 
@@ -335,7 +381,7 @@
                 </div>
                 <div class="text-sm opacity-80 truncate">
                     {result.length} pozycji
-                    {#if onlyAvailableUnwatched && checkSubtitleAvailabilityOnline}
+                    {#if checkSubtitleAvailabilityOnline}
                         | napisy: {subtitleLanguage || "dowolny"}
                         {#if excludeAiSubtitles}
                             bez AI
@@ -368,6 +414,30 @@
                     <div class="text-xs text-warning truncate">
                         {formatRefreshError(refreshStatus.lastError)}
                     </div>
+                {/if}
+                {#if refreshStatus.failures.length > 0}
+                    <details class="mt-2 rounded-box border border-warning/30 bg-warning/5 p-2 text-xs">
+                        <summary class="cursor-pointer text-warning">
+                            Nie udalo sie sprawdzic {refreshStatus.failures.length} pozycji
+                        </summary>
+                        <ul class="mt-2 flex flex-col gap-2">
+                            {#each refreshStatus.failures as failure}
+                                <li class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="truncate font-medium">{failure.title}</div>
+                                        <div class="truncate opacity-70" title={failure.reason}>{failure.reason}</div>
+                                    </div>
+                                    <button
+                                        class="btn btn-ghost btn-xs shrink-0"
+                                        title="Otworz anime w Shinden"
+                                        onclick={() => { void openUrl(failure.seriesUrl); }}
+                                    >
+                                        WWW
+                                    </button>
+                                </li>
+                            {/each}
+                        </ul>
+                    </details>
                 {/if}
             </div>
 
@@ -447,6 +517,7 @@
                         class="btn btn-square btn-ghost"
                         aria-label="episodes"
                         onclick={async () => { await handleButton(anime); }}
+                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
                     >
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                             <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -467,6 +538,7 @@
                                 data-debug-url={anime.url}
                                 class="text-left"
                                 onclick={async () => { await handleButton(anime); }}
+                                onauxclick={(event) => handleTitleAuxClick(event, anime)}
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
@@ -505,6 +577,7 @@
                                     class="btn btn-square btn-ghost btn-sm"
                                     aria-label="episodes"
                                     onclick={async () => { await handleButton(anime); }}
+                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >
                                     <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -550,13 +623,12 @@
                         type="checkbox"
                         class="toggle toggle-primary"
                         bind:checked={draftCheckSubtitleAvailabilityOnline}
-                        disabled={!draftOnlyAvailableUnwatched}
                     />
                 </label>
 
-                {#if draftOnlyAvailableUnwatched && draftCheckSubtitleAvailabilityOnline}
+                {#if draftCheckSubtitleAvailabilityOnline}
                     <p class="text-xs opacity-60">
-                        Filtrowanie po jezyku wydluza odswiezanie, bo aplikacja sprawdza playery dla nieobejrzanych odcinkow.
+                        Filtrowanie po jezyku wydluza odswiezanie, bo aplikacja sprawdza playery dostepnych odcinkow.
                     </p>
                 {/if}
 
@@ -565,7 +637,6 @@
                     <select
                         class="select select-bordered w-full"
                         bind:value={draftSubtitleLanguage}
-                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
                     >
                         {#each subtitleLanguageOptions as option}
                             <option value={option.value}>{option.label}</option>
@@ -579,7 +650,6 @@
                         type="checkbox"
                         class="toggle toggle-primary"
                         bind:checked={draftExcludeAiSubtitles}
-                        disabled={!draftOnlyAvailableUnwatched || !draftCheckSubtitleAvailabilityOnline}
                     />
                 </label>
             </div>

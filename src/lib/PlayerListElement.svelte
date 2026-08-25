@@ -1,15 +1,15 @@
 <script lang="ts">
     import type {Player} from "$lib/types";
-    import {params} from "$lib/global.svelte";
-    import {goto} from "$app/navigation";
+    import { openActiveTitleView } from "$lib/titleNavigation";
 
     let { player, iterator } : {
         player: Player, iterator: number
     } = $props();
 
     async function handleButton(playerId: string) {
-        params.playerId = playerId;
-        await goto(`/watching`);
+        await openActiveTitleView("watching", {
+            playerId,
+        });
     }
 </script>
         <li class="list-row flex items-center justify-between">

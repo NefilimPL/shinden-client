@@ -51,3 +51,55 @@ test("does not restore GUI fullscreen while a player element is still fullscreen
   assert.equal(restored, false);
   assert.deepEqual(mockWindow.calls, []);
 });
+
+test("taskbar presentation maximizes instead of enabling native fullscreen", async () => {
+  const intent = createWindowFullscreenIntent();
+  const calls = [];
+  const appWindow = {
+    async setFullscreen(value) {
+      calls.push(`fullscreen:${value}`);
+    },
+    async isFullscreen() {
+      return false;
+    },
+    async isMaximized() {
+      return false;
+    },
+    async maximize() {
+      calls.push("maximize");
+    },
+    async unmaximize() {
+      calls.push("unmaximize");
+    },
+  };
+
+  await intent.toggleWindowPresentation(appWindow, "taskbar");
+
+test("taskbar presentation exits native fullscreen before maximizing", async () => {
+  const intent = createWindowFullscreenIntent();
+  const calls = [];
+  const appWindow = {
+    async setFullscreen(value) {
+      calls.push(`fullscreen:${value}`);
+    },
+    async isFullscreen() {
+      return true;
+    },
+    async isMaximized() {
+      return false;
+    },
+    async maximize() {
+      calls.push("maximize");
+    },
+    async unmaximize() {
+      calls.push("unmaximize");
+    },
+  };
+
+  await intent.toggleWindowPresentation(appWindow, "taskbar");
+
+  assert.deepEqual(calls, ["fullscreen:false", "maximize"]);
+});
+
+  assert.deepEqual(calls, ["maximize"]);
+});

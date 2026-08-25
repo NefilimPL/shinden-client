@@ -11,6 +11,13 @@ export type WatchlistRefreshFilter = {
     excludeAiSubtitles: boolean;
 };
 
+export type WatchingCacheFailure = {
+    titleId: number;
+    title: string;
+    seriesUrl: string;
+    reason: string;
+};
+
 export type WatchingCacheRefreshStatus = {
     running: boolean;
     current: number;
@@ -20,6 +27,7 @@ export type WatchingCacheRefreshStatus = {
     failed: number;
     currentTitle: string;
     lastFinishedAtMs: number | null;
+    failures: WatchingCacheFailure[];
     lastError: string | null;
 };
 

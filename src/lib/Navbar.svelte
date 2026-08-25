@@ -5,6 +5,8 @@
     import { onMount } from "svelte";
     import { globalStates } from "$lib/global.svelte";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
+    import ViewMenu from "$lib/ViewMenu.svelte";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     import { shouldStartTouchWindowDrag } from "$lib/windowDrag";
 
     let isDark = $state(true);
@@ -27,7 +29,7 @@
 
     async function toggleFullscreenWindow() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await windowFullscreenIntent.toggleWindowFullscreen(getCurrentWindow());
+        await windowFullscreenIntent.toggleWindowPresentation(getCurrentWindow(), titleWorkspace.fullscreenPresentation);
     }
 
     async function closeWindow() {
@@ -64,6 +66,7 @@
             <li><UpdateButton/></li>
         </ul>
     </div>
+    <ViewMenu />
 
     <div>
         <input type="checkbox" bind:checked={isDark} class="toggle theme-controller" />

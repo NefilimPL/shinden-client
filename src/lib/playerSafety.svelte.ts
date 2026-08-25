@@ -3,7 +3,8 @@ export const safePlayers = $state([
     "Mega",
     "Vk",
     "Dailymotion",
-    "Youtube"
+    "Youtube",
+    "LycorisCafe",
 ]);
 
 export const builtinPlayers = $state([

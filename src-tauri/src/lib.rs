@@ -3,6 +3,7 @@ use shinden_pl_api::client_backend::{
     ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
     UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
+    WatchingEpisodeAvailability,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player};
@@ -103,9 +104,10 @@ async fn get_episodes_with_progress(
     url: String,
     title_id: Option<u64>,
     total_episodes: Option<u32>,
+    title_name: Option<String>,
 ) -> Result<Vec<EpisodeProgress>, String> {
     state
-        .get_episodes_with_progress(url, title_id, total_episodes)
+        .get_episodes_with_progress(url, title_id, total_episodes, title_name)
         .await
 }
 
@@ -158,6 +160,14 @@ fn get_watching_cache_refresh_status(
     state: tauri::State<'_, ShindenClientBackend>,
 ) -> Result<WatchingCacheRefreshStatus, String> {
     state.get_watching_cache_refresh_status()
+}
+
+#[tauri::command]
+fn get_watching_episode_availability(
+    state: tauri::State<'_, ShindenClientBackend>,
+    title_id: u64,
+) -> Option<std::collections::HashMap<String, WatchingEpisodeAvailability>> {
+    state.get_watching_episode_availability(title_id)
 }
 
 #[tauri::command]
@@ -312,6 +322,7 @@ pub fn run() {
             mark_episode_unwatched,
             get_watching_cache_refresh_status,
             refresh_watching_anime_cache,
+            get_watching_episode_availability,
             refresh_watching_anime_cache_item,
             login,
             logout,

@@ -1,29 +1,37 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
-    import {onMount} from "svelte";
+    import {onMount, untrack} from "svelte";
     import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
-    import {goto} from "$app/navigation";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
+    import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { filterSearchAnime } from "$lib/searchFilters";
+    import { baseViewForPath } from "$lib/baseViewState";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     globalStates.loadingState = LoadingState.LOADING;
 
     let result: Array<SearchAnime> = $state([]);
     let statusUpdateInProgress: number | null = $state(null);
     let viewMode: AnimeListViewMode = $state("list");
+    let baseStateRestored = $state(false);
     const viewModeStorageKey = "shinden:search-view-mode";
 
     onMount(async () => {
         try {
             loadViewMode();
+            restoreBaseState();
+            baseStateRestored = true;
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
-            result = await invoke<SearchAnime[]>("search", {
+            const searchResults = await invoke<SearchAnime[]>("search", {
                 query: params.animeName
             });
 
+            result = filterSearchAnime(searchResults, params.searchFilters);
             if (result.length > 0) {
                 result = result.sort((a, b) => {
                     let a_rating = Number(a.rating.replace(",", "."));
@@ -43,6 +51,32 @@
             log(LogLevel.ERROR, `Error searching anime: ${params.animeName}`);
         }
     })
+
+    $effect(() => {
+        if (!baseStateRestored) return;
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/search", {
+            animeName: params.animeName,
+            searchFilters: { ...params.searchFilters },
+            viewMode,
+        }, 0)));
+    });
+
+    function restoreBaseState() {
+        if (titleWorkspace.baseView.id !== "search") {
+            return;
+        }
+
+        const state = titleWorkspace.baseView.state;
+        if (typeof state.animeName === "string") {
+            params.animeName = state.animeName;
+        }
+        if (typeof state.searchFilters === "object" && state.searchFilters !== null && !Array.isArray(state.searchFilters)) {
+            params.searchFilters = { ...params.searchFilters, ...state.searchFilters };
+        }
+        if (state.viewMode === "grid" || state.viewMode === "list") {
+            viewMode = state.viewMode;
+        }
+    }
 
     function loadViewMode() {
         const stored = localStorage.getItem(viewModeStorageKey);
@@ -91,15 +125,26 @@
         select.value = anime.watchStatus;
     }
 
-    async function handleButton(anime: SearchAnime) {
-        params.seriesUrl = anime.url;
-        params.titleId = statusTitleId(anime);
-        params.animeWatchStatus = anime.watchStatus;
-        params.animeIsFavourite = anime.isFavourite;
-        params.animeTotalEpisodes = anime.totalEpisodes;
-        params.episodeProgress = [];
-        params.currentEpisodeIndex = -1;
-        await goto("/episodes");
+    async function handleButton(anime: SearchAnime, background = false) {
+        const titleId = statusTitleId(anime);
+        if (!titleId) {
+            return;
+        }
+
+        const input = {
+            titleId,
+            name: anime.name,
+            imageUrl: anime.image_url,
+            seriesUrl: anime.url,
+            watchStatus: anime.watchStatus,
+            isFavourite: anime.isFavourite,
+            totalEpisodes: anime.totalEpisodes,
+        };
+        await (background ? openAnimeTitleInBackground(input) : openAnimeTitle(input));
+    }
+
+    function handleTitleAuxClick(event: MouseEvent, anime: SearchAnime) {
+        openTitleOnAuxClick(event, () => { void handleButton(anime, true); });
     }
 </script>
 
@@ -153,7 +198,13 @@
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
                     {:else}
-                        <button data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime) }}>
+                        <button
+                            data-debug-url={anime.url}
+                            class="btn btn-square btn-ghost"
+                            aria-label="play"
+                            onclick={async () => { await handleButton(anime); }}
+                            onauxclick={(event) => handleTitleAuxClick(event, anime)}
+                        >
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
                     {/if}
@@ -173,6 +224,7 @@
                                 class="text-left"
                                 disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
                                 onclick={async () => { await handleButton(anime); }}
+                                onauxclick={(event) => handleTitleAuxClick(event, anime)}
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
@@ -212,6 +264,7 @@
                                     aria-label="play"
                                     disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
                                     onclick={async () => { await handleButton(anime); }}
+                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >
                                     <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                                 </button>
