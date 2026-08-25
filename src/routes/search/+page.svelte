@@ -1,6 +1,6 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
-    import {onMount} from "svelte";
+    import {onMount, untrack} from "svelte";
     import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
@@ -54,11 +54,11 @@
 
     $effect(() => {
         if (!baseStateRestored) return;
-        titleWorkspace.saveBaseView(baseViewForPath("/search", {
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/search", {
             animeName: params.animeName,
             searchFilters: { ...params.searchFilters },
             viewMode,
-        }, 0));
+        }, 0)));
     });
 
     function restoreBaseState() {

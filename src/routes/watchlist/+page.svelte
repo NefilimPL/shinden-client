@@ -1,6 +1,6 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";
     import { globalStates, LoadingState } from "$lib/global.svelte";
@@ -78,13 +78,13 @@
 
     $effect(() => {
         if (!baseStateRestored) return;
-        titleWorkspace.saveBaseView(baseViewForPath("/watchlist", {
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/watchlist", {
             viewMode,
             onlyAvailableUnwatched,
             subtitleLanguage,
             checkSubtitleAvailabilityOnline,
             excludeAiSubtitles,
-        }, 0));
+        }, 0)));
     });
 
     function restoreBaseState() {

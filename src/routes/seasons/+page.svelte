@@ -1,6 +1,6 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import type { AnimeListViewMode, DiscoveryAnime, SeasonOption, SeasonSlug } from "$lib/types";
     import { globalStates, LoadingState } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
@@ -34,7 +34,7 @@
 
     $effect(() => {
         if (!baseStateRestored) return;
-        titleWorkspace.saveBaseView(baseViewForPath("/seasons", { year, season, viewMode }, 0));
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/seasons", { year, season, viewMode }, 0)));
     });
 
     function restoreBaseState() {

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
     import { goto } from "$app/navigation";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import Empty from "$lib/Empty.svelte";
     import { animeStatusOptions } from "$lib/shindenProgress";
@@ -90,10 +90,10 @@
 
     $effect(() => {
         if (!baseStateRestored) return;
-        titleWorkspace.saveBaseView(baseViewForPath("/account/lists", {
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/account/lists", {
             filters: { ...filters },
             viewMode,
-        }, 0));
+        }, 0)));
     });
 
     function restoreBaseState() {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -26,4 +27,16 @@ test("normalizes invalid base context", () => {
     scrollY: 0,
     state: {},
   });
+});
+
+test("base-view state effects do not track their own store writes", () => {
+  for (const source of [
+    "src/routes/watchlist/+page.svelte",
+    "src/routes/search/+page.svelte",
+    "src/routes/account/lists/+page.svelte",
+    "src/routes/seasons/+page.svelte",
+  ]) {
+    const text = readFileSync(source, "utf8");
+    assert.match(text, /untrack\(\(\) => titleWorkspace\.saveBaseView/);
+  }
 });
