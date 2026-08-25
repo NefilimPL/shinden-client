@@ -39,18 +39,18 @@
 
 <div class="flex h-screen flex-col bg-base-100">
     <Navbar />
-    {#if isTitleRoute && titleWorkspace.activeSession}
-        <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
-            <TitleTabs />
+    <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
+        <TitleTabs />
+        {#if isTitleRoute && titleWorkspace.activeSession}
             <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
                 {#key `${titleWorkspace.activeTitleId}:${titleWorkspace.activeSession.view}`}
                     {@render children()}
                 {/key}
             </div>
-        </div>
-    {:else}
+        {:else}
         <div class="flex-1 overflow-y-auto" data-base-view-scroll>
             {@render children()}
         </div>
-    {/if}
+        {/if}
+    </div>
 </div>
