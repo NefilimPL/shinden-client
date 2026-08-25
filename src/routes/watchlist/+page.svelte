@@ -14,8 +14,10 @@
         type WatchingCacheRefreshSummary,
     } from "$lib/watchlistRefresh";
 
-    import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
+    import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { baseViewForPath } from "$lib/baseViewState";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     const refreshStatusPollMs = 2000;
     const subtitleLanguageOptions = [
         { value: "PL", label: "Polski" },
@@ -54,11 +56,14 @@
     let refreshStatusInitialized = $state(false);
     let silentReloadInProgress = $state(false);
     let viewMode: AnimeListViewMode = $state("list");
+    let baseStateRestored = $state(false);
     const viewModeStorageKey = "shinden:watchlist-view-mode";
 
     onMount(() => {
         loadSettings();
         loadViewMode();
+        restoreBaseState();
+        baseStateRestored = true;
         void loadWatchingAnime();
         void pollRefreshStatus();
 
@@ -70,6 +75,32 @@
             window.clearInterval(statusTimer);
         };
     });
+
+    $effect(() => {
+        if (!baseStateRestored) return;
+        titleWorkspace.saveBaseView(baseViewForPath("/watchlist", {
+            viewMode,
+            onlyAvailableUnwatched,
+            subtitleLanguage,
+            checkSubtitleAvailabilityOnline,
+            excludeAiSubtitles,
+        }, 0));
+    });
+
+    function restoreBaseState() {
+        if (titleWorkspace.baseView.id !== "watchlist") {
+            return;
+        }
+
+        const state = titleWorkspace.baseView.state;
+        if (state.viewMode === "grid" || state.viewMode === "list") viewMode = state.viewMode;
+        if (typeof state.onlyAvailableUnwatched === "boolean") onlyAvailableUnwatched = state.onlyAvailableUnwatched;
+        if (typeof state.subtitleLanguage === "string") subtitleLanguage = state.subtitleLanguage;
+        if (typeof state.checkSubtitleAvailabilityOnline === "boolean") {
+            checkSubtitleAvailabilityOnline = state.checkSubtitleAvailabilityOnline;
+        }
+        if (typeof state.excludeAiSubtitles === "boolean") excludeAiSubtitles = state.excludeAiSubtitles;
+    }
 
     function loadViewMode() {
         const stored = localStorage.getItem(viewModeStorageKey);
@@ -310,13 +341,13 @@
         await updateStatus(anime, status);
     }
 
-    async function handleButton(anime: WatchingAnime) {
+    async function handleButton(anime: WatchingAnime, background = false) {
         const titleId = anime.titleId || titleIdFromSeriesUrl(anime.url);
         if (!titleId) {
             return;
         }
 
-        await openAnimeTitle({
+        const input = {
             titleId,
             name: anime.name,
             imageUrl: anime.image_url,
@@ -324,11 +355,12 @@
             watchStatus: anime.watchStatus,
             isFavourite: anime.isFavourite,
             totalEpisodes: anime.totalEpisodes,
-        });
+        };
+        await (background ? openAnimeTitleInBackground(input) : openAnimeTitle(input));
     }
 
-    function handleTitleMouseDown(event: MouseEvent, anime: WatchingAnime) {
-        openTitleOnMouseDown(event, () => { void handleButton(anime); });
+    function handleTitleAuxClick(event: MouseEvent, anime: WatchingAnime) {
+        openTitleOnAuxClick(event, () => { void handleButton(anime, true); });
     }
 </script>
 
@@ -485,7 +517,7 @@
                         class="btn btn-square btn-ghost"
                         aria-label="episodes"
                         onclick={async () => { await handleButton(anime); }}
-                        onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
                     >
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                             <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -506,7 +538,7 @@
                                 data-debug-url={anime.url}
                                 class="text-left"
                                 onclick={async () => { await handleButton(anime); }}
-                                onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                                onauxclick={(event) => handleTitleAuxClick(event, anime)}
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
@@ -545,7 +577,7 @@
                                     class="btn btn-square btn-ghost btn-sm"
                                     aria-label="episodes"
                                     onclick={async () => { await handleButton(anime); }}
-                                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >
                                     <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">

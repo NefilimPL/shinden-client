@@ -1,11 +1,16 @@
 import type { AnimeWatchStatus, EpisodeProgress } from "./types";
 
 export type TitleView = "episodes" | "players" | "watching";
-export type BaseViewPath = "/" | "/watchlist";
+export type BaseViewId = "watchlist" | "user-lists" | "search" | "seasons";
 export type BaseViewContext = {
-    path: BaseViewPath;
+    id: BaseViewId;
     scrollY: number;
+    state: Record<string, unknown>;
 };
+
+export type WorkspaceActiveTab =
+    | { kind: "base" }
+    | { kind: "title"; titleId: number };
 
 export type TitleWorkspaceLayout = "vertical" | "horizontal" | "none";
 export type FullscreenPresentation = "immersive" | "taskbar";
@@ -36,7 +41,12 @@ export type TitleSession = TitleOpenInput & {
 export type TitleWorkspaceState = TitleWorkspacePreferences & {
     baseView: BaseViewContext;
     tabs: TitleSession[];
-    activeTitleId: number | null;
+    activeTab: WorkspaceActiveTab;
+};
+
+export type TitleSessionOpenResult = {
+    state: TitleWorkspaceState;
+    created: boolean;
 };
 
 const defaultPreferences: TitleWorkspacePreferences = {
@@ -72,24 +82,13 @@ export function workspacePreferencesForStorage(
 }
 
 
-export function baseViewContextForRoute(path: string, scrollY: number): BaseViewContext | null {
-    if (path !== "/" && path !== "/watchlist") {
-        return null;
-    }
-
-    return {
-        path,
-        scrollY: Number.isFinite(scrollY) ? Math.max(0, scrollY) : 0,
-    };
-}
-
 export function createTitleWorkspaceState(
     preferences: Partial<TitleWorkspacePreferences> = {},
 ): TitleWorkspaceState {
     return {
         tabs: [],
-        baseView: { path: "/", scrollY: 0 },
-        activeTitleId: null,
+        baseView: { id: "watchlist", scrollY: 0, state: {} },
+        activeTab: { kind: "base" },
         layout: isWorkspaceLayout(preferences.layout) ? preferences.layout : defaultPreferences.layout,
         fullscreenPresentation: isFullscreenPresentation(preferences.fullscreenPresentation)
             ? preferences.fullscreenPresentation
@@ -97,19 +96,32 @@ export function createTitleWorkspaceState(
     };
 }
 
-export function openTitleSession(state: TitleWorkspaceState, input: TitleOpenInput) {
+export function openTitleSession(
+    state: TitleWorkspaceState,
+    input: TitleOpenInput,
+    activate = true,
+): TitleSessionOpenResult {
+    if (state.layout === "none") {
+        return { state, created: false };
+    }
+
     const existing = state.tabs.find((tab) => tab.titleId === input.titleId);
     if (existing) {
         return {
-            state: { ...state, activeTitleId: existing.titleId },
+            state: activate
+                ? { ...state, activeTab: { kind: "title", titleId: existing.titleId } }
+                : state,
             created: false,
         };
     }
 
     const session = createTitleSession(input);
-    const tabs = state.layout === "none" ? [session] : [...state.tabs, session];
     return {
-        state: { ...state, tabs, activeTitleId: session.titleId },
+        state: {
+            ...state,
+            tabs: [...state.tabs, session],
+            activeTab: activate ? { kind: "title", titleId: session.titleId } : state.activeTab,
+        },
         created: true,
     };
 }
@@ -119,9 +131,12 @@ export function activateTitleSession(state: TitleWorkspaceState, titleId: number
         return state;
     }
 
-    return { ...state, activeTitleId: titleId };
+    return { ...state, activeTab: { kind: "title", titleId } };
 }
 
+export function activateBaseSession(state: TitleWorkspaceState): TitleWorkspaceState {
+    return { ...state, activeTab: { kind: "base" } };
+}
 
 export function saveBaseViewContext(
     state: TitleWorkspaceState,
@@ -136,15 +151,17 @@ export function closeTitleSession(state: TitleWorkspaceState, titleId: number): 
     }
 
     const tabs = state.tabs.filter((tab) => tab.titleId !== titleId);
-    if (state.activeTitleId !== titleId) {
+    if (state.activeTab.kind !== "title" || state.activeTab.titleId !== titleId) {
         return { ...state, tabs };
     }
 
-    const nextActive = tabs[index] ?? tabs[index - 1] ?? null;
+    const nextActive = tabs[index] ?? tabs[index - 1];
     return {
         ...state,
         tabs,
-        activeTitleId: nextActive?.titleId ?? null,
+        activeTab: nextActive
+            ? { kind: "title", titleId: nextActive.titleId }
+            : { kind: "base" },
     };
 }
 
@@ -152,13 +169,15 @@ export function updateActiveTitleSession(
     state: TitleWorkspaceState,
     update: Partial<Omit<TitleSession, "titleId">>,
 ): TitleWorkspaceState {
-    if (state.activeTitleId === null) {
+    if (state.activeTab.kind !== "title") {
         return state;
     }
 
+    const activeTitleId = state.activeTab.titleId;
+
     return {
         ...state,
-        tabs: state.tabs.map((tab) => tab.titleId === state.activeTitleId
+        tabs: state.tabs.map((tab) => tab.titleId === activeTitleId
             ? { ...tab, ...update }
             : tab),
     };
@@ -172,12 +191,11 @@ export function setWorkspaceLayout(
         return { ...state, layout };
     }
 
-    const active = activeTitleSession(state);
     return {
         ...state,
         layout,
-        tabs: active ? [active] : [],
-        activeTitleId: active?.titleId ?? null,
+        tabs: [],
+        activeTab: { kind: "base" },
     };
 }
 
@@ -189,7 +207,12 @@ export function setFullscreenPresentation(
 }
 
 export function activeTitleSession(state: TitleWorkspaceState): TitleSession | null {
-    return state.tabs.find((tab) => tab.titleId === state.activeTitleId) ?? null;
+    if (state.activeTab.kind !== "title") {
+        return null;
+    }
+
+    const activeTitleId = state.activeTab.titleId;
+    return state.tabs.find((tab) => tab.titleId === activeTitleId) ?? null;
 }
 
 export function titleRouteForView(view: TitleView) {

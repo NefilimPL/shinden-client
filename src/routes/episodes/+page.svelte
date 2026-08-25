@@ -12,7 +12,7 @@
         RelatedSeries,
     } from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
-    import { openActiveTitleView, openRelatedAnimeTitle } from "$lib/titleNavigation";
+    import { openActiveTitleView, openAnimeTitleInBackground, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings, refreshWatchingCacheTitleFromStoredSettings } from "$lib/watchlistRefresh";
@@ -174,21 +174,26 @@
         }
     }
 
-    async function openRelatedSeries(series: RelatedSeries) {
+    async function openRelatedSeries(series: RelatedSeries, background = false) {
         const titleId = titleIdFromSeriesUrl(series.url);
         if (!titleId) {
             return;
         }
 
-        await openRelatedAnimeTitle({
+        const input = {
             titleId,
             name: series.name,
             imageUrl: series.imageUrl,
             seriesUrl: series.url,
-            watchStatus: "no",
+            watchStatus: "no" as AnimeWatchStatus,
             isFavourite: 0,
             totalEpisodes: null,
-        });
+        };
+        if (background) {
+            await openAnimeTitleInBackground(input);
+            return;
+        }
+        await openRelatedAnimeTitle(input);
     }
 
     async function openOnShinden() {
@@ -264,6 +269,7 @@
                 onStatusChange={(status) => { void updateAnimeStatus(status); }}
                 onRatingChange={(ratingType, value) => { void updateAnimeRating(ratingType, value); }}
                 onOpenRelated={(series) => { void openRelatedSeries(series); }}
+                onOpenRelatedInBackground={(series) => { void openRelatedSeries(series, true); }}
                 onOpenOnShinden={() => { void openOnShinden(); }}
             />
         {/if}

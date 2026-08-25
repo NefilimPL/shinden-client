@@ -5,8 +5,8 @@
     import { globalStates } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
-    import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
+    import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
     import Empty from "$lib/Empty.svelte";
 
     let {
@@ -63,13 +63,13 @@
         select.value = anime.watchStatus;
     }
 
-    async function openInApp(anime: DiscoveryAnime) {
+    async function openInApp(anime: DiscoveryAnime, background = false) {
         const titleId = statusTitleId(anime);
         if (!titleId) {
             return;
         }
 
-        await openAnimeTitle({
+        const input = {
             titleId,
             name: anime.name,
             imageUrl: anime.image_url,
@@ -77,11 +77,12 @@
             watchStatus: anime.watchStatus,
             isFavourite: anime.isFavourite,
             totalEpisodes: anime.totalEpisodes,
-        });
+        };
+        await (background ? openAnimeTitleInBackground(input) : openAnimeTitle(input));
     }
 
-    function handleTitleMouseDown(event: MouseEvent, anime: DiscoveryAnime) {
-        openTitleOnMouseDown(event, () => { void openInApp(anime); });
+    function handleTitleAuxClick(event: MouseEvent, anime: DiscoveryAnime) {
+        openTitleOnAuxClick(event, () => { void openInApp(anime, true); });
     }
 
     async function openOnShinden(anime: DiscoveryAnime) {
@@ -153,7 +154,7 @@
                     aria-label="odcinki"
                     disabled={!statusTitleId(anime)}
                     onclick={() => { void openInApp(anime); }}
-                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                 >
                     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -175,7 +176,7 @@
                         class="group text-left"
                         disabled={!statusTitleId(anime)}
                         onclick={() => { void openInApp(anime); }}
-                        onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
                     >
                         <img
                             class="aspect-[2/3] w-full object-cover"

@@ -266,7 +266,7 @@
                         class="btn btn-ghost btn-sm w-full sm:w-auto"
                         onclick={() => { void returnToAnime(); }}
                     >
-                        Wr?? do anime
+                        Wróć do anime
                     </button>
                     <button
                         class="btn btn-primary btn-sm w-full sm:w-auto"

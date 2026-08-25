@@ -1,5 +1,6 @@
 import {
     activeTitleSession,
+    activateBaseSession,
     activateTitleSession,
     closeTitleSession,
     createTitleWorkspaceState,
@@ -18,6 +19,7 @@ import {
     type TitleWorkspaceLayout,
     type TitleWorkspaceState,
 } from "$lib/titleWorkspace";
+import { normalizedBaseViewContext } from "$lib/baseViewState";
 import type { TitleNavigationContext } from "$lib/global.svelte";
 
 const preferencesStorageKey = "shinden:title-workspace-preferences";
@@ -32,7 +34,11 @@ export const titleWorkspace = {
     },
 
     get activeTitleId() {
-        return state.activeTitleId;
+        return state.activeTab.kind === "title" ? state.activeTab.titleId : null;
+    },
+
+    get activeTab() {
+        return state.activeTab;
     },
 
     get activeSession() {
@@ -51,12 +57,12 @@ export const titleWorkspace = {
     },
 
 
-    open(input: TitleOpenInput) {
-        const result = openTitleSession(state, input);
+    open(input: TitleOpenInput, activate = true) {
+        const result = openTitleSession(state, input, activate);
         state = result.state;
         return {
             ...result,
-            session: activeTitleSession(state),
+            session: state.tabs.find((tab) => tab.titleId === input.titleId) ?? null,
         };
     },
 
@@ -70,8 +76,13 @@ export const titleWorkspace = {
         return activeTitleSession(state);
     },
 
+    activateBase() {
+        state = activateBaseSession(state);
+        return state.baseView;
+    },
+
     saveBaseView(context: BaseViewContext) {
-        state = saveBaseViewContext(state, context);
+        state = saveBaseViewContext(state, normalizedBaseViewContext(context));
         return state.baseView;
     },
 
@@ -96,6 +107,7 @@ export const titleWorkspace = {
 
 export function titleSessionNavigationContext(session: TitleSession): TitleNavigationContext {
     return {
+        animeName: session.name,
         seriesUrl: session.seriesUrl,
         playersUrl: session.playersUrl,
         playerId: session.playerId,

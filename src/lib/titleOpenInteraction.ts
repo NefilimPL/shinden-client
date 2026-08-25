@@ -1,12 +1,5 @@
 type AuxiliaryPointerEvent = Pick<MouseEvent, "button" | "preventDefault">;
 
-export function openTitleOnMouseDown(
-    event: AuxiliaryPointerEvent,
-    open: () => void,
-): boolean {
-    return openTitleOnMiddleMouseButton(event, open);
-}
-
 export function openTitleOnAuxClick(
     event: AuxiliaryPointerEvent,
     open: () => void,

@@ -23,13 +23,16 @@
         countUserAnimeListStatuses,
         statusCountKey,
         userAnimeListAgeRatings,
+        userAnimeListNeedsAgeMetadataRefresh,
         userAnimeListStatusOptions,
         userAnimeListTags,
         userAnimeListTypes,
     } from "$lib/userAnimeLists";
 
-    import { openAnimeTitle } from "$lib/titleNavigation";
-    import { openTitleOnMouseDown } from "$lib/titleOpenInteraction";
+    import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
+    import { baseViewForPath } from "$lib/baseViewState";
+    import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     const viewModeStorageKey = "shinden:user-anime-lists-view-mode";
     const refreshStatusPollMs = 1500;
 
@@ -50,12 +53,14 @@
     let statusUpdateInProgress: number | null = $state(null);
     let syncError: string | null = $state(null);
     let refreshedAtMs: number | null = $state(null);
+    let baseStateRestored = $state(false);
 
     let visibleItems = $derived(applyUserAnimeListFilters(items, filters));
     let counts = $derived(countUserAnimeListStatuses(items));
     let animeTypes = $derived(userAnimeListTypes(items));
     let tagOptions = $derived(userAnimeListTags(items));
     let ageRatingOptions = $derived(userAnimeListAgeRatings(items));
+    let needsAgeMetadataRefresh = $derived(userAnimeListNeedsAgeMetadataRefresh(items));
     let refreshInProgress = $derived(refreshStatus.running);
     let refreshProgressText = $derived(
         refreshStatus.total > 0
@@ -69,6 +74,8 @@
 
     onMount(() => {
         loadViewMode();
+        restoreBaseState();
+        baseStateRestored = true;
 
         const refreshStatusTimer = window.setInterval(() => {
             void pollUserAnimeListRefreshStatus();
@@ -80,6 +87,28 @@
             window.clearInterval(refreshStatusTimer);
         };
     });
+
+    $effect(() => {
+        if (!baseStateRestored) return;
+        titleWorkspace.saveBaseView(baseViewForPath("/account/lists", {
+            filters: { ...filters },
+            viewMode,
+        }, 0));
+    });
+
+    function restoreBaseState() {
+        if (titleWorkspace.baseView.id !== "user-lists") {
+            return;
+        }
+
+        const state = titleWorkspace.baseView.state;
+        if (typeof state.filters === "object" && state.filters !== null && !Array.isArray(state.filters)) {
+            filters = { ...filters, ...state.filters };
+        }
+        if (state.viewMode === "grid" || state.viewMode === "list") {
+            viewMode = state.viewMode;
+        }
+    }
 
     function defaultUserAnimeListRefreshStatus(): UserAnimeListRefreshStatus {
         return {
@@ -287,8 +316,8 @@
         select.value = anime.watchStatus;
     }
 
-    async function openEpisodes(anime: UserAnimeListItem) {
-        await openAnimeTitle({
+    async function openEpisodes(anime: UserAnimeListItem, background = false) {
+        const input = {
             titleId: anime.titleId,
             name: anime.name,
             imageUrl: anime.image_url,
@@ -296,11 +325,12 @@
             watchStatus: anime.watchStatus,
             isFavourite: anime.isFavourite,
             totalEpisodes: anime.totalEpisodes,
-        });
+        };
+        await (background ? openAnimeTitleInBackground(input) : openAnimeTitle(input));
     }
 
-    function handleTitleMouseDown(event: MouseEvent, anime: UserAnimeListItem) {
-        openTitleOnMouseDown(event, () => { void openEpisodes(anime); });
+    function handleTitleAuxClick(event: MouseEvent, anime: UserAnimeListItem) {
+        openTitleOnAuxClick(event, () => { void openEpisodes(anime, true); });
     }
 </script>
 
@@ -425,6 +455,17 @@
                         {/each}
                     </select>
 
+                    {#if needsAgeMetadataRefresh}
+                        <button
+                            class="btn btn-outline btn-sm w-full"
+                            type="button"
+                            disabled={refreshInProgress}
+                            onclick={() => { void refreshUserAnimeListCache(); }}
+                        >
+                            Pobierz kategorie wiekowe
+                        </button>
+                    {/if}
+
                     {#if tagOptions.length === 0 && ageRatingOptions.length === 0}
                         <p class="text-xs opacity-60">
                             Uzyj odswiezania cache, aby pobrac tagi i kategorie wiekowe.
@@ -537,7 +578,7 @@
                                     class="btn btn-square btn-ghost"
                                     aria-label="odcinki"
                                     onclick={() => { void openEpisodes(anime); }}
-                                    onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                                    onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >
                                     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
@@ -557,7 +598,7 @@
                                         type="button"
                                         class="text-left"
                                         onclick={() => { void openEpisodes(anime); }}
-                                        onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                                        onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                     >
                                         <img
                                             class="aspect-[2/3] w-full object-cover"
@@ -596,7 +637,7 @@
                                             class="btn btn-square btn-ghost btn-sm"
                                             aria-label="odcinki"
                                             onclick={() => { void openEpisodes(anime); }}
-                                            onmousedown={(event) => handleTitleMouseDown(event, anime)}
+                                            onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                         >
                                             <svg class="size-[1em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                                 <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">

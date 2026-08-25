@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import {
   activateTitleSession,
-  baseViewContextForRoute,
   closeTitleSession,
   createTitleWorkspaceState,
   openTitleSession,
@@ -39,57 +38,59 @@ test("activates an already open title without duplicating its card", () => {
 
   assert.equal(reopened.created, false);
   assert.deepEqual(reopened.state.tabs.map((tab) => tab.titleId), [71632, 59922]);
-  assert.equal(reopened.state.activeTitleId, 71632);
+  assert.deepEqual(reopened.state.activeTab, { kind: "title", titleId: 71632 });
 });
 
-test("none layout replaces the active title session", () => {
+test("none layout does not create a title session", () => {
   const opened = openTitleSession(createTitleWorkspaceState(), kokoore).state;
   const result = openTitleSession({ ...opened, layout: "none" }, enen).state;
 
-  assert.deepEqual(result.tabs.map((tab) => tab.titleId), [59922]);
-  assert.equal(result.activeTitleId, 59922);
+  assert.deepEqual(result.tabs.map((tab) => tab.titleId), [71632]);
+  assert.deepEqual(result.activeTab, { kind: "title", titleId: 71632 });
 });
 
-test("switching to none layout keeps only the active title session", () => {
+test("switching to none layout clears title sessions and selects the base tab", () => {
 
   const twoTabs = openTitleSession(
     openTitleSession(createTitleWorkspaceState(), kokoore).state,
     enen,
   ).state;
-  const hidden = setWorkspaceLayout({ ...twoTabs, activeTitleId: 71632 }, "none");
+  const hidden = setWorkspaceLayout(activateTitleSession(twoTabs, 71632), "none");
 
-  assert.deepEqual(hidden.tabs.map((tab) => tab.titleId), [71632]);
-  assert.equal(hidden.activeTitleId, 71632);
+  assert.deepEqual(hidden.tabs, []);
+  assert.deepEqual(hidden.activeTab, { kind: "base" });
 });
 test("closing the active card selects its nearest neighbor and final close empties the workspace", () => {
   const twoTabs = openTitleSession(
     openTitleSession(createTitleWorkspaceState(), kokoore).state,
     enen,
   ).state;
-  const afterFirstClose = closeTitleSession({ ...twoTabs, activeTitleId: 71632 }, 71632);
+  const afterFirstClose = closeTitleSession(activateTitleSession(twoTabs, 71632), 71632);
   const afterFinalClose = closeTitleSession(afterFirstClose, 59922);
 
-  assert.equal(afterFirstClose.activeTitleId, 59922);
+  assert.deepEqual(afterFirstClose.activeTab, { kind: "title", titleId: 59922 });
   assert.deepEqual(afterFinalClose.tabs, []);
-  assert.equal(afterFinalClose.activeTitleId, null);
+  assert.deepEqual(afterFinalClose.activeTab, { kind: "base" });
 });
 
 test("closing the final title keeps the last base view context", () => {
   const withBaseView = saveBaseViewContext(createTitleWorkspaceState(), {
-    path: "/watchlist",
+    id: "watchlist",
     scrollY: 380,
+    state: {},
   });
   const opened = openTitleSession(withBaseView, kokoore).state;
   const closed = closeTitleSession(opened, kokoore.titleId);
 
-  assert.equal(closed.activeTitleId, null);
-  assert.deepEqual(closed.baseView, { path: "/watchlist", scrollY: 380 });
+  assert.deepEqual(closed.activeTab, { kind: "base" });
+  assert.deepEqual(closed.baseView, { id: "watchlist", scrollY: 380, state: {} });
 });
 
 test("workspace preferences never include transient title or base sessions", () => {
   const withBaseView = saveBaseViewContext(createTitleWorkspaceState(), {
-    path: "/watchlist",
+    id: "watchlist",
     scrollY: 380,
+    state: {},
   });
   const state = openTitleSession(withBaseView, kokoore).state;
 
@@ -97,19 +98,6 @@ test("workspace preferences never include transient title or base sessions", () 
     layout: "vertical",
     fullscreenPresentation: "immersive",
   });
-});
-
-test("only the home and watchlist routes become a base view", () => {
-  assert.deepEqual(baseViewContextForRoute("/", 12), {
-    path: "/",
-    scrollY: 12,
-  });
-  assert.deepEqual(baseViewContextForRoute("/watchlist", 380), {
-    path: "/watchlist",
-    scrollY: 380,
-  });
-  assert.equal(baseViewContextForRoute("/search", 24), null);
-  assert.equal(baseViewContextForRoute("/episodes", 24), null);
 });
 
 test("invalid persisted view preferences use the documented defaults", () => {
@@ -129,7 +117,7 @@ test("restores the selected title session including its player subview", () => {
   const withOther = openTitleSession(player, enen).state;
   const restored = activateTitleSession(withOther, 71632);
 
-  assert.equal(restored.activeTitleId, 71632);
+  assert.deepEqual(restored.activeTab, { kind: "title", titleId: 71632 });
   assert.equal(restored.tabs[0].view, "watching");
   assert.equal(restored.tabs[0].playerId, "online-77");
   assert.equal(restored.tabs[0].currentEpisodeIndex, 3);

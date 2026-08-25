@@ -26,6 +26,7 @@ export const globalStates: {
 });
 
 export type TitleNavigationContext = {
+    animeName: string;
     seriesUrl: string;
     playersUrl: string;
     playerId: string;
@@ -65,6 +66,7 @@ export const params: {
 
 export function snapshotTitleNavigationContext(): TitleNavigationContext {
     return {
+        animeName: params.animeName,
         seriesUrl: params.seriesUrl,
         playersUrl: params.playersUrl,
         playerId: params.playerId,
@@ -78,6 +80,7 @@ export function snapshotTitleNavigationContext(): TitleNavigationContext {
 }
 
 export function restoreTitleNavigationContext(context: TitleNavigationContext) {
+    params.animeName = context.animeName;
     params.seriesUrl = context.seriesUrl;
     params.playersUrl = context.playersUrl;
     params.playerId = context.playerId;

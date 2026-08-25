@@ -6,6 +6,7 @@
         RelatedSeries,
     } from "$lib/types";
     import { animeStatusOptions } from "$lib/shindenProgress";
+    import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
 
     let {
         details,
@@ -16,6 +17,7 @@
         onStatusChange,
         onRatingChange,
         onOpenRelated,
+        onOpenRelatedInBackground,
         onOpenOnShinden,
     }: {
         details: AnimeDetails;
@@ -26,6 +28,7 @@
         onStatusChange: (status: AnimeWatchStatus) => void;
         onRatingChange: (ratingType: AnimeRatingKey, value: number) => void;
         onOpenRelated: (series: RelatedSeries) => void;
+        onOpenRelatedInBackground?: (series: RelatedSeries) => void;
         onOpenOnShinden: () => void;
     } = $props();
 
@@ -174,6 +177,7 @@
                                 type="button"
                                 class="group flex min-w-0 flex-col overflow-hidden rounded-lg bg-base-200 text-left shadow-sm transition hover:bg-base-300"
                                 onclick={() => onOpenRelated(series)}
+                                onauxclick={(event) => openTitleOnAuxClick(event, () => onOpenRelatedInBackground?.(series))}
                             >
                                 {#if series.imageUrl}
                                     <img

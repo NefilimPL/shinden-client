@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -6,6 +7,7 @@ import {
   countUserAnimeListStatuses,
   statusCountKey,
   userAnimeListStatusOptions,
+  userAnimeListNeedsAgeMetadataRefresh,
 } from "../src/lib/userAnimeLists.ts";
 
 function item(overrides = {}) {
@@ -164,4 +166,24 @@ test("can exclude a selected tag", () => {
   });
 
   assert.deepEqual(result.map((anime) => anime.titleId), [2]);
+});
+
+test("requests metadata refresh when active items have no age ratings", () => {
+  assert.equal(userAnimeListNeedsAgeMetadataRefresh([
+    item({ active: true, ageRating: null }),
+    item({ titleId: 2, active: false, ageRating: null }),
+  ]), true);
+});
+
+test("does not request metadata refresh once an active rating is cached", () => {
+  assert.equal(userAnimeListNeedsAgeMetadataRefresh([
+    item({ active: true, ageRating: "PG-13" }),
+  ]), false);
+});
+
+test("user lists expose an in-context age metadata refresh action", () => {
+  const source = readFileSync("src/routes/account/lists/+page.svelte", "utf8");
+  assert.match(source, /userAnimeListNeedsAgeMetadataRefresh/);
+  assert.match(source, /Pobierz kategorie wiekowe/);
+  assert.match(source, /onclick=\{\(\) => \{ void refreshUserAnimeListCache\(\); \}\}/);
 });
