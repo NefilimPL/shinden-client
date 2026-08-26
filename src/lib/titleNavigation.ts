@@ -5,7 +5,7 @@ import {
     snapshotTitleNavigationContext,
     type TitleNavigationContext,
 } from "$lib/global.svelte";
-import { baseViewForPath, baseViewPath, isBaseViewPath } from "$lib/baseViewState";
+import { baseViewForPathWithPreservedState, baseViewPath, isBaseViewPath } from "$lib/baseViewState";
 import { titleRouteForView, type TitleOpenInput, type TitleView } from "$lib/titleWorkspace";
 import { titleSessionNavigationContext, titleWorkspace } from "$lib/titleWorkspace.svelte";
 
@@ -116,9 +116,9 @@ function saveCurrentBaseView() {
     }
 
     const scrollContainer = baseViewScrollContainer();
-    const context = baseViewForPath(
+    const context = baseViewForPathWithPreservedState(
         path,
-        {},
+        titleWorkspace.baseView,
         scrollContainer?.scrollTop ?? 0,
     );
     titleWorkspace.saveBaseView(context);

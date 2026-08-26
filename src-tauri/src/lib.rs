@@ -1,5 +1,5 @@
 use shinden_pl_api::client_backend::{
-    append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime,
+    append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime, SearchAnimePage,
     ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
     UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
@@ -48,7 +48,7 @@ async fn get_search_filter_catalog(
 async fn search_with_filters(
     state: tauri::State<'_, ShindenClientBackend>,
     request: SearchFilterRequest,
-) -> Result<Vec<SearchAnime>, String> {
+) -> Result<SearchAnimePage, String> {
     state.search_with_filters(request).await
 }
 

@@ -10,6 +10,7 @@
     import type { EpisodeProgress } from "$lib/types";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
     import { enableIframeFullscreen } from "$lib/playerIframe";
+    import { playerLoadErrorMessage } from "$lib/playerLoadError";
 
     let isBuiltIn: boolean = $state(false);
     let iframeHtml: string = $state("");
@@ -182,7 +183,7 @@
             globalStates.loadingState = LoadingState.OK;
         } catch (e) {
             globalStates.loadingState = LoadingState.ERROR;
-            log(LogLevel.ERROR, `Error loading player: ${e}`);
+            log(LogLevel.ERROR, playerLoadErrorMessage(e));
         }
     })
 

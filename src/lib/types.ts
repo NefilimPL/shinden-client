@@ -181,6 +181,12 @@ export type SearchAnime = Anime & {
     totalEpisodes: number | null;
 };
 
+export type SearchAnimePage = {
+    items: SearchAnime[];
+    currentPage: number;
+    totalPages: number;
+};
+
 export type SearchTagSelectionMode = "include" | "exclude";
 
 export type SearchTagSelection = {
@@ -209,6 +215,7 @@ export type SearchFilterRequest = {
     tags: SearchTagSelection[];
     genresType: "all" | "one";
     letter: string | null;
+    page: number;
 };
 
 export type DiscoveryAnime = Anime & {

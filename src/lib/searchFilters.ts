@@ -39,18 +39,20 @@ export function filterSearchAnime<T extends SearchFilterItem>(
 }
 
 export function hasAdvancedSearchFilters(filters: SearchFilters): boolean {
-    return filters.tags.length > 0 || filters.letter !== null;
+    return filters.minimumRating !== null || filters.tags.length > 0 || filters.letter !== null;
 }
 
 export function searchFilterRequest(
     filters: SearchFilters,
     query: string,
+    page = 1,
 ): SearchFilterRequest {
     return {
         query: query.trim(),
         tags: filters.tags,
         genresType: filters.genresType,
         letter: filters.letter,
+        page: Math.max(1, Math.floor(page)),
     };
 }
 

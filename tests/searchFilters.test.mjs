@@ -42,7 +42,27 @@ test("builds a Shinden request from active tag selections", () => {
     genresType: "all",
     letter: "A",
     tags: filters.tags,
+    page: 1,
   });
+});
+
+test("includes the selected result page in a Shinden filter request", () => {
+  const request = searchFilterRequest(defaultSearchFilters, "Alpha", 3);
+
+  assert.deepEqual(request, {
+    query: "Alpha",
+    genresType: "all",
+    letter: null,
+    tags: [],
+    page: 3,
+  });
+});
+
+test("uses the paginated search path when only minimum rating is selected", () => {
+  assert.equal(
+    hasAdvancedSearchFilters({ ...defaultSearchFilters, minimumRating: 8 }),
+    true,
+  );
 });
 
 test("replaces an existing tag selection instead of duplicating it", () => {
