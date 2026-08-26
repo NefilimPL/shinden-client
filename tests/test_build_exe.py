@@ -128,6 +128,38 @@ class BuildExePlanTests(unittest.TestCase):
             self.assertEqual(contents["identifier"], "com.blazejdrozd.shinden-client-rs.dev")
             self.assertEqual(contents["bundle"]["createUpdaterArtifacts"], False)
 
+    def test_collect_exe_artifacts_uses_configured_cargo_target_before_project_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "shinden-client"
+            configured_target = root / "cargo-target"
+            project_target = root / "src-tauri" / "target"
+            configured_exe = configured_target / "release" / "ShindenClient.exe"
+            stale_project_exe = project_target / "release" / "ShindenClient.exe"
+            configured_exe.parent.mkdir(parents=True)
+            stale_project_exe.parent.mkdir(parents=True)
+            configured_exe.write_text("new build", encoding="utf-8")
+            stale_project_exe.write_text("old build", encoding="utf-8")
+
+            artifacts = build_exe.collect_exe_artifacts(root, configured_target)
+
+            self.assertEqual(artifacts, [configured_exe])
+
+    def test_copy_artifacts_replaces_previous_artifact_with_the_same_name(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "build" / "ShindenClient.exe"
+            dist_dir = root / "dist-exe"
+            source.parent.mkdir()
+            dist_dir.mkdir()
+            source.write_text("new build", encoding="utf-8")
+            (dist_dir / source.name).write_text("old build", encoding="utf-8")
+
+            copied = build_exe.copy_artifacts([source], dist_dir)
+
+            self.assertEqual(copied, [dist_dir / source.name])
+            self.assertEqual((dist_dir / source.name).read_text(encoding="utf-8"), "new build")
+            self.assertFalse((dist_dir / "ShindenClient-2.exe").exists())
+
     def test_project_environment_points_logs_at_project_root(self):
         root = Path("C:/project")
 
