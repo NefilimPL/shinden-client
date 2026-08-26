@@ -9,7 +9,11 @@
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
     import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
-    import { filterSearchAnime } from "$lib/searchFilters";
+    import {
+        filterSearchAnime,
+        hasAdvancedSearchFilters,
+        searchFilterRequest,
+    } from "$lib/searchFilters";
     import { baseViewForPath } from "$lib/baseViewState";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     globalStates.loadingState = LoadingState.LOADING;
@@ -27,9 +31,11 @@
             baseStateRestored = true;
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
-            const searchResults = await invoke<SearchAnime[]>("search", {
-                query: params.animeName
-            });
+            const searchResults = hasAdvancedSearchFilters(params.searchFilters)
+                ? await invoke<SearchAnime[]>("search_with_filters", {
+                    request: searchFilterRequest(params.searchFilters, params.animeName),
+                })
+                : await invoke<SearchAnime[]>("search", { query: params.animeName });
 
             result = filterSearchAnime(searchResults, params.searchFilters);
             if (result.length > 0) {
