@@ -181,6 +181,43 @@ export type SearchAnime = Anime & {
     totalEpisodes: number | null;
 };
 
+export type SearchAnimePage = {
+    items: SearchAnime[];
+    currentPage: number;
+    totalPages: number;
+};
+
+export type SearchTagSelectionMode = "include" | "exclude";
+
+export type SearchTagSelection = {
+    tagId: number;
+    mode: SearchTagSelectionMode;
+};
+
+export type SearchTagOption = {
+    id: number;
+    label: string;
+};
+
+export type SearchTagGroup = {
+    id: string;
+    label: string;
+    options: SearchTagOption[];
+};
+
+export type SearchFilterCatalog = {
+    groups: SearchTagGroup[];
+    letters: string[];
+};
+
+export type SearchFilterRequest = {
+    query: string;
+    tags: SearchTagSelection[];
+    genresType: "all" | "one";
+    letter: string | null;
+    page: number;
+};
+
 export type DiscoveryAnime = Anime & {
     titleId: number | null;
     watchStatus: AnimeWatchStatus;

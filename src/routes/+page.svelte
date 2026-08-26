@@ -4,18 +4,29 @@
     import { invoke } from "@tauri-apps/api/core";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { goto } from "$app/navigation";
-    import type { AnimeListViewMode, DiscoveryAnime } from "$lib/types";
+    import type {
+        AnimeListViewMode,
+        DiscoveryAnime,
+        SearchFilterCatalog,
+        SearchTagSelectionMode,
+    } from "$lib/types";
     import DiscoveryAnimeList from "$lib/DiscoveryAnimeList.svelte";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
 
     import {
         defaultSearchFilters,
+        setSearchTagSelection,
         type SearchFilters,
     } from "$lib/searchFilters";
     let animeName: string = $state("");
     let premieres: DiscoveryAnime[] = $state([]);
     let searchFilters: SearchFilters = $state({ ...defaultSearchFilters });
     let showSearchFilters = $state(false);
+    let filterCatalog: SearchFilterCatalog | null = $state(null);
+    let filterCatalogLoading = $state(false);
+    let filterCatalogError: string | null = $state(null);
+    let activeFilterGroupId = $state("");
+    let selectedTagMode: SearchTagSelectionMode = $state("include");
     let premieresLoading = $state(false);
     let viewMode: AnimeListViewMode = $state("list");
     const viewModeStorageKey = "shinden:premieres-view-mode";
@@ -61,6 +72,49 @@
         }
     }
 
+    async function toggleSearchFilters() {
+        showSearchFilters = !showSearchFilters;
+        if (!showSearchFilters || filterCatalog !== null || filterCatalogLoading) {
+            return;
+        }
+
+        filterCatalogLoading = true;
+        filterCatalogError = null;
+        try {
+            filterCatalog = await invoke<SearchFilterCatalog>("get_search_filter_catalog");
+            activeFilterGroupId = filterCatalog.groups[0]?.id ?? "";
+        } catch (error) {
+            filterCatalogError = `Nie udało się pobrać filtrów Shinden: ${error}`;
+        } finally {
+            filterCatalogLoading = false;
+        }
+    }
+
+    function activeFilterGroup() {
+        return filterCatalog?.groups.find((group) => group.id === activeFilterGroupId)
+            ?? filterCatalog?.groups[0]
+            ?? null;
+    }
+
+    function tagMode(tagId: number): SearchTagSelectionMode | null {
+        return searchFilters.tags.find((tag) => tag.tagId === tagId)?.mode ?? null;
+    }
+
+    function toggleTag(tagId: number) {
+        const nextMode = tagMode(tagId) === selectedTagMode ? null : selectedTagMode;
+        searchFilters = {
+            ...searchFilters,
+            tags: setSearchTagSelection(searchFilters.tags, tagId, nextMode),
+        };
+    }
+
+    function toggleLetter(letter: string) {
+        searchFilters = {
+            ...searchFilters,
+            letter: searchFilters.letter === letter ? null : letter,
+        };
+    }
+
     function handleButton(event: Event) {
         event.preventDefault();
         params.animeName = animeName.trim();
@@ -103,7 +157,7 @@
                             type="button"
                             class="btn btn-ghost join-item"
                             aria-pressed={showSearchFilters}
-                            onclick={() => { showSearchFilters = !showSearchFilters; }}
+                            onclick={() => { void toggleSearchFilters(); }}
                         >
                             Filtry
                         </button>
@@ -118,16 +172,13 @@
                     </div>
 
                     {#if showSearchFilters}
-                        <div class="grid gap-3 rounded-box bg-base-200 p-3 sm:grid-cols-2">
+                        <div class="flex flex-col gap-4 rounded-box bg-base-200 p-3">
+                            <div class="grid gap-3 sm:grid-cols-2">
                             <label class="form-control">
-                                <span class="label-text mb-1">Typ produkcji</span>
-                                <select class="select select-bordered select-sm" bind:value={searchFilters.animeType}>
-                                    <option value="">Dowolny</option>
-                                    <option value="TV">TV</option>
-                                    <option value="Movie">Movie</option>
-                                    <option value="OVA">OVA</option>
-                                    <option value="ONA">ONA</option>
-                                    <option value="Special">Special</option>
+                                <span class="label-text mb-1">Dopasowanie wybranych pozycji</span>
+                                <select class="select select-bordered select-sm" bind:value={searchFilters.genresType}>
+                                    <option value="all">Wszystkie wybrane</option>
+                                    <option value="one">Co najmniej jedna</option>
                                 </select>
                             </label>
                             <label class="form-control">
@@ -141,8 +192,75 @@
                                     <option value={9}>9,0</option>
                                 </select>
                             </label>
-                            <p class="text-xs opacity-60 sm:col-span-2">
-                                Filtry zawezaja wyniki Shinden po pobraniu. Mozesz zostawic tytul pusty, aby przegladac katalog.
+                            </div>
+
+                            {#if filterCatalogLoading}
+                                <div class="skeleton h-32 w-full"></div>
+                            {:else if filterCatalogError}
+                                <div class="alert alert-warning text-sm" role="alert">{filterCatalogError}</div>
+                            {:else if filterCatalog && filterCatalog.groups.length > 0}
+                                {@const currentGroup = activeFilterGroup()}
+                                {#if filterCatalog.letters.length > 0}
+                                    <div class="flex flex-wrap items-center gap-1" aria-label="Alfabetycznie">
+                                        <span class="mr-1 text-sm font-medium">Alfabetycznie:</span>
+                                        {#each filterCatalog.letters as letter}
+                                            <button
+                                                type="button"
+                                                class:btn-active={searchFilters.letter === letter}
+                                                class="btn btn-ghost btn-xs"
+                                                aria-pressed={searchFilters.letter === letter}
+                                                onclick={() => toggleLetter(letter)}
+                                            >{letter === "1" ? "#" : letter}</button>
+                                        {/each}
+                                    </div>
+                                {/if}
+                                <div class="flex flex-wrap gap-1" role="tablist" aria-label="Kategorie filtrów Shinden">
+                                    {#each filterCatalog.groups as group}
+                                        <button
+                                            type="button"
+                                            class:btn-active={activeFilterGroup()?.id === group.id}
+                                            class="btn btn-sm btn-ghost"
+                                            role="tab"
+                                            aria-selected={activeFilterGroup()?.id === group.id}
+                                            onclick={() => { activeFilterGroupId = group.id; }}
+                                        >{group.label}</button>
+                                    {/each}
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 text-sm">
+                                    <span class="font-medium">Po kliknięciu tagu:</span>
+                                    <label class="label cursor-pointer gap-1 py-0">
+                                        <input class="radio radio-success radio-xs" type="radio" name="tag-mode" value="include" bind:group={selectedTagMode} />
+                                        Chcę
+                                    </label>
+                                    <label class="label cursor-pointer gap-1 py-0">
+                                        <input class="radio radio-error radio-xs" type="radio" name="tag-mode" value="exclude" bind:group={selectedTagMode} />
+                                        Nie chcę
+                                    </label>
+                                    <span class="text-xs opacity-60">Ponowne kliknięcie usuwa wybór.</span>
+                                </div>
+
+                                {#if currentGroup}
+                                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                                        {#each currentGroup.options as option}
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm justify-start"
+                                                class:btn-success={tagMode(option.id) === "include"}
+                                                class:btn-error={tagMode(option.id) === "exclude"}
+                                                class:btn-ghost={tagMode(option.id) === null}
+                                                aria-pressed={tagMode(option.id) !== null}
+                                                onclick={() => toggleTag(option.id)}
+                                            >{option.label}</button>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            {:else}
+                                <p class="text-sm opacity-60">Shinden nie zwrócił obecnie dostępnych filtrów.</p>
+                            {/if}
+
+                            <p class="text-xs opacity-60">
+                                Filtry katalogowe są wysyłane bezpośrednio do Shinden. Tytuł możesz zostawić pusty, aby przeglądać katalog.
                             </p>
                         </div>
                     {/if}

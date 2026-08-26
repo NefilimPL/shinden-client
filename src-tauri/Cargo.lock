@@ -4161,7 +4161,7 @@ dependencies = [
 
 [[package]]
 name = "shinden-pl-api"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "cookie_store 0.21.1",

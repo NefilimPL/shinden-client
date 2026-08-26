@@ -25,3 +25,12 @@ test("related-series cards support background opening", () => {
   assert.match(episodePage, /onOpenRelatedInBackground/);
   assert.match(episodePage, /openAnimeTitleInBackground/);
 });
+
+test("title tab close control uses the reliable event helper", () => {
+  const tabs = readFileSync("src/lib/TitleTabs.svelte", "utf8");
+  const panel = readFileSync("src/lib/AnimeDetailsPanel.svelte", "utf8");
+
+  assert.match(tabs, /closeTitleTabFromControl/);
+  assert.match(tabs, /btn-xs absolute right-0 top-1\/2 z-10/);
+  assert.match(panel, /Otwórz w Shinden/);
+});

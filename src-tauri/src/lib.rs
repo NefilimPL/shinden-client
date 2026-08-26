@@ -1,12 +1,12 @@
 use shinden_pl_api::client_backend::{
-    append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime,
+    append_project_log, command_error, DiscoveryAnime, EpisodeProgress, SearchAnime, SearchAnimePage,
     ShindenClientBackend, UserAnimeListRefreshStatus, UserAnimeListRefreshSummary,
     UserAnimeListsPayload, WatchingAnime, WatchingAnimeFilter, WatchingCacheRefreshStatus,
     WatchingCacheRefreshSummary,
     WatchingEpisodeAvailability,
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
-use shinden_pl_api::models::{Episode, Player};
+use shinden_pl_api::models::{Episode, Player, SearchFilterCatalog, SearchFilterRequest};
 
 mod updater_commands;
 
@@ -35,6 +35,21 @@ async fn search(
     query: String,
 ) -> Result<Vec<SearchAnime>, String> {
     state.search(query).await
+}
+
+#[tauri::command]
+async fn get_search_filter_catalog(
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<SearchFilterCatalog, String> {
+    state.get_search_filter_catalog().await
+}
+
+#[tauri::command]
+async fn search_with_filters(
+    state: tauri::State<'_, ShindenClientBackend>,
+    request: SearchFilterRequest,
+) -> Result<SearchAnimePage, String> {
+    state.search_with_filters(request).await
 }
 
 #[tauri::command]
@@ -307,6 +322,8 @@ pub fn run() {
             write_log,
             test_connection,
             search,
+            get_search_filter_catalog,
+            search_with_filters,
             get_main_premieres,
             get_season_anime,
             get_anime_details,

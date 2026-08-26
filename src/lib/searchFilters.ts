@@ -1,31 +1,66 @@
+import type {
+    SearchFilterRequest,
+    SearchTagSelection,
+    SearchTagSelectionMode,
+} from "$lib/types";
+
 export type SearchFilters = {
-    animeType: string;
     minimumRating: number | null;
+    tags: SearchTagSelection[];
+    genresType: "all" | "one";
+    letter: string | null;
 };
 
 type SearchFilterItem = {
-    anime_type: string;
     rating: string;
 };
 
 export const defaultSearchFilters: SearchFilters = {
-    animeType: "",
     minimumRating: null,
+    tags: [],
+    genresType: "all",
+    letter: null,
 };
 
 export function filterSearchAnime<T extends SearchFilterItem>(
     results: T[],
     filters: SearchFilters,
 ): T[] {
-    const selectedType = filters.animeType.trim().toLocaleLowerCase();
-
     return results.filter((anime) => {
-        const typeMatches = !selectedType
-            || anime.anime_type.trim().toLocaleLowerCase() === selectedType;
-        const rating = Number(anime.rating.replace(",", "."));
+        const ratingText = anime.rating.trim();
+        const rating = Number(ratingText.replace(",", "."));
         const ratingMatches = filters.minimumRating === null
-            || (!Number.isNaN(rating) && rating >= filters.minimumRating);
+            || !ratingText
+            || Number.isNaN(rating)
+            || rating >= filters.minimumRating;
 
-        return typeMatches && ratingMatches;
+        return ratingMatches;
     });
+}
+
+export function hasAdvancedSearchFilters(filters: SearchFilters): boolean {
+    return filters.minimumRating !== null || filters.tags.length > 0 || filters.letter !== null;
+}
+
+export function searchFilterRequest(
+    filters: SearchFilters,
+    query: string,
+    page = 1,
+): SearchFilterRequest {
+    return {
+        query: query.trim(),
+        tags: filters.tags,
+        genresType: filters.genresType,
+        letter: filters.letter,
+        page: Math.max(1, Math.floor(page)),
+    };
+}
+
+export function setSearchTagSelection(
+    selections: SearchTagSelection[],
+    tagId: number,
+    mode: SearchTagSelectionMode | null,
+): SearchTagSelection[] {
+    const remaining = selections.filter((selection) => selection.tagId !== tagId);
+    return mode === null ? remaining : [...remaining, { tagId, mode }];
 }

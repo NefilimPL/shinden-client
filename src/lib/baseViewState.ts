@@ -25,6 +25,17 @@ export function baseViewForPath(
     };
 }
 
+export function baseViewForPathWithPreservedState(
+    path: string,
+    previous: BaseViewContext,
+    scrollY: number,
+): BaseViewContext {
+    const next = baseViewForPath(path, {}, scrollY);
+    return previous.id === next.id
+        ? { ...next, state: previous.state }
+        : next;
+}
+
 export function isBaseViewPath(path: string): path is keyof typeof definitions {
     return path in definitions;
 }

@@ -2,6 +2,7 @@
     import { titleTabPresentation } from "$lib/titleTabPresentation";
     import { baseViewLabel } from "$lib/baseViewState";
     import { activateBaseTab, activateTitleTab, closeTitleTab } from "$lib/titleNavigation";
+    import { closeTitleTabFromControl } from "$lib/titleTabCloseInteraction";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     let rail = $state<HTMLElement | null>(null);
@@ -74,10 +75,10 @@
                 {#if presentation.showClose}
                     <button
                     type="button"
-                    class="btn btn-circle btn-ghost btn-xs absolute right-0 top-1/2 -translate-y-1/2"
+                    class="btn btn-circle btn-ghost btn-xs absolute right-0 top-1/2 z-10 -translate-y-1/2"
                     aria-label={`Zamknij ${tab.name}`}
                     title={`Zamknij ${tab.name}`}
-                    onclick={(event) => { event.stopPropagation(); void closeTitleTab(tab.titleId); }}
+                    onclick={(event) => closeTitleTabFromControl(event, () => { void closeTitleTab(tab.titleId); })}
                     >
                         <svg class="size-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"></path>

@@ -1,7 +1,7 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
     import {onMount, untrack} from "svelte";
-    import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime} from "$lib/types";
+    import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime, SearchAnimePage} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import Empty from "$lib/Empty.svelte";
@@ -9,14 +9,21 @@
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import { openAnimeTitle, openAnimeTitleInBackground } from "$lib/titleNavigation";
     import { openTitleOnAuxClick } from "$lib/titleOpenInteraction";
-    import { filterSearchAnime } from "$lib/searchFilters";
+    import {
+        filterSearchAnime,
+        hasAdvancedSearchFilters,
+        searchFilterRequest,
+    } from "$lib/searchFilters";
     import { baseViewForPath } from "$lib/baseViewState";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
+    import { restoreSearchResultState, searchResultState } from "$lib/searchResultState";
     globalStates.loadingState = LoadingState.LOADING;
 
     let result: Array<SearchAnime> = $state([]);
     let statusUpdateInProgress: number | null = $state(null);
     let viewMode: AnimeListViewMode = $state("list");
+    let currentPage = $state(1);
+    let totalPages = $state(1);
     let baseStateRestored = $state(false);
     const viewModeStorageKey = "shinden:search-view-mode";
 
@@ -25,13 +32,42 @@
             loadViewMode();
             restoreBaseState();
             baseStateRestored = true;
+            const restored = titleWorkspace.baseView.id === "search"
+                ? restoreSearchResultState<SearchAnime>(titleWorkspace.baseView.state)
+                : null;
+            if (restored) {
+                result = restored.result;
+                currentPage = restored.currentPage;
+                totalPages = restored.totalPages;
+                globalStates.loadingState = result.length > 0 ? LoadingState.OK : LoadingState.WARNING;
+                return;
+            }
+
+            await loadSearchPage(1);
+        } catch (e) {
+            globalStates.loadingState = LoadingState.ERROR;
+            log(LogLevel.ERROR, `Error searching anime: ${params.animeName}`);
+        }
+    })
+
+    async function loadSearchPage(page: number) {
+        try {
+            globalStates.loadingState = LoadingState.LOADING;
             log(LogLevel.INFO, `Searching anime: ${params.animeName}`);
 
-            const searchResults = await invoke<SearchAnime[]>("search", {
-                query: params.animeName
-            });
+            const searchPage = hasAdvancedSearchFilters(params.searchFilters)
+                ? await invoke<SearchAnimePage>("search_with_filters", {
+                    request: searchFilterRequest(params.searchFilters, params.animeName, page),
+                })
+                : {
+                    items: await invoke<SearchAnime[]>("search", { query: params.animeName }),
+                    currentPage: 1,
+                    totalPages: 1,
+                };
 
-            result = filterSearchAnime(searchResults, params.searchFilters);
+            result = filterSearchAnime(searchPage.items, params.searchFilters);
+            currentPage = searchPage.currentPage;
+            totalPages = searchPage.totalPages;
             if (result.length > 0) {
                 result = result.sort((a, b) => {
                     let a_rating = Number(a.rating.replace(",", "."));
@@ -50,15 +86,17 @@
             globalStates.loadingState = LoadingState.ERROR;
             log(LogLevel.ERROR, `Error searching anime: ${params.animeName}`);
         }
-    })
+    }
 
     $effect(() => {
         if (!baseStateRestored) return;
-        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/search", {
+        const nextState = {
             animeName: params.animeName,
             searchFilters: { ...params.searchFilters },
             viewMode,
-        }, 0)));
+            ...searchResultState(result, currentPage, totalPages),
+        };
+        untrack(() => titleWorkspace.saveBaseView(baseViewForPath("/search", nextState, 0)));
     });
 
     function restoreBaseState() {
@@ -158,10 +196,27 @@
     </div>
 {:else}
 
-    {#if result.length > 0}
+        {#if result.length > 0}
 
     <div class="flex flex-col h-full w-full overflow-y-scroll gap-3 p-4">
-        <div class="flex justify-end">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            {#if totalPages > 1}
+                <div class="join" aria-label="Strony wyników">
+                    <button
+                        type="button"
+                        class="btn btn-sm join-item"
+                        disabled={currentPage <= 1}
+                        onclick={() => { void loadSearchPage(currentPage - 1); }}
+                    >Poprzednia</button>
+                    <span class="btn btn-sm join-item pointer-events-none">{currentPage} / {totalPages}</span>
+                    <button
+                        type="button"
+                        class="btn btn-sm join-item"
+                        disabled={currentPage >= totalPages}
+                        onclick={() => { void loadSearchPage(currentPage + 1); }}
+                    >Następna</button>
+                </div>
+            {/if}
             <AnimeListViewToggle value={viewMode} onChange={setViewMode} />
         </div>
 
@@ -276,7 +331,26 @@
         {/if}
     </div>
     {:else}
-        <Empty />
+        <div class="flex h-full w-full flex-col gap-3 p-4">
+            {#if totalPages > 1}
+                <div class="join self-start" aria-label="Strony wyników">
+                    <button
+                        type="button"
+                        class="btn btn-sm join-item"
+                        disabled={currentPage <= 1}
+                        onclick={() => { void loadSearchPage(currentPage - 1); }}
+                    >Poprzednia</button>
+                    <span class="btn btn-sm join-item pointer-events-none">{currentPage} / {totalPages}</span>
+                    <button
+                        type="button"
+                        class="btn btn-sm join-item"
+                        disabled={currentPage >= totalPages}
+                        onclick={() => { void loadSearchPage(currentPage + 1); }}
+                    >Następna</button>
+                </div>
+            {/if}
+            <Empty />
+        </div>
     {/if}
 {/if}
 
