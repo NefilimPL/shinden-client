@@ -688,12 +688,8 @@ def run_command(
 
 
 def collect_exe_artifacts(root: Path, cargo_target_dir: Path | None = None) -> list[Path]:
-    target_dirs: list[Path] = []
-    if cargo_target_dir is not None:
-        target_dirs.append(cargo_target_dir)
     project_target_dir = root / "src-tauri" / "target"
-    if project_target_dir not in target_dirs:
-        target_dirs.append(project_target_dir)
+    target_dirs = [cargo_target_dir] if cargo_target_dir is not None else [project_target_dir]
 
     artifacts: list[Path] = []
 
@@ -707,7 +703,10 @@ def collect_exe_artifacts(root: Path, cargo_target_dir: Path | None = None) -> l
         if bundle_dir.exists():
             artifacts.extend(sorted(bundle_dir.rglob("*.exe")))
 
-    return artifacts
+    if artifacts or cargo_target_dir is None or project_target_dir == cargo_target_dir:
+        return artifacts
+
+    return collect_exe_artifacts(root)
 
 
 def copy_artifacts(artifacts: Iterable[Path], dist_dir: Path) -> list[Path]:
@@ -716,10 +715,6 @@ def copy_artifacts(artifacts: Iterable[Path], dist_dir: Path) -> list[Path]:
 
     for artifact in artifacts:
         destination = dist_dir / artifact.name
-        counter = 2
-        while destination.exists():
-            destination = dist_dir / f"{artifact.stem}-{counter}{artifact.suffix}"
-            counter += 1
         shutil.copy2(artifact, destination)
         copied.append(destination)
 
