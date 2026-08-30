@@ -1,27 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const moduleUrl = new URL("../src/lib/titleTabCloseInteraction.ts", import.meta.url);
-const closeInteraction = await import(moduleUrl).catch(() => ({}));
+import { createTitleTabCloseController } from "../src/lib/titleTabCloseInteraction.ts";
 
-test("close control consumes the click and closes its title", () => {
+test("close control consumes its event before requesting a tab close", async () => {
   let prevented = false;
   let stopped = false;
   let closed = 0;
+  const controller = createTitleTabCloseController();
 
-  assert.equal(typeof closeInteraction.closeTitleTabFromControl, "function");
-
-  const handled = closeInteraction.closeTitleTabFromControl({
+  const handled = await controller.close({
     preventDefault() {
       prevented = true;
     },
     stopPropagation() {
       stopped = true;
     },
-  }, () => closed += 1);
+  }, 71632, async () => {
+    closed += 1;
+  });
 
   assert.equal(handled, true);
   assert.equal(prevented, true);
   assert.equal(stopped, true);
   assert.equal(closed, 1);
+});
+
+test("close control suppresses a second request while the first is pending", async () => {
+  const controller = createTitleTabCloseController();
+  let calls = 0;
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const event = { preventDefault() {}, stopPropagation() {} };
+
+  const first = controller.close(event, 71632, async () => {
+    calls += 1;
+    await pending;
+  });
+  const second = await controller.close(event, 71632, async () => {
+    calls += 1;
+  });
+  release();
+  const firstHandled = await first;
+
+  assert.equal(firstHandled, true);
+  assert.equal(second, false);
+  assert.equal(calls, 1);
 });
