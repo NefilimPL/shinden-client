@@ -196,6 +196,12 @@
     });
 </script>
 
+<style>
+    :global(iframe:fullscreen) {
+        outline: none;
+    }
+</style>
+
 <div class="h-full w-full flex flex-col">
     {#if globalStates.loadingState === LoadingState.LOADING}
         <div class="flex flex-1 items-center justify-center">
