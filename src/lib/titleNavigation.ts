@@ -8,6 +8,7 @@ import {
 import { baseViewForPathWithPreservedState, baseViewPath, isBaseViewPath } from "$lib/baseViewState";
 import { titleRouteForView, type TitleOpenInput, type TitleView } from "$lib/titleWorkspace";
 import { titleSessionNavigationContext, titleWorkspace } from "$lib/titleWorkspace.svelte";
+import { closeNavigationTarget } from "$lib/titleTabCloseNavigation";
 
 export type OpenAnimeTitleInput = TitleOpenInput;
 
@@ -59,18 +60,18 @@ export async function closeTitleTab(titleId: number) {
         saveCurrentWorkspaceContext();
     }
 
-    const session = titleWorkspace.close(titleId);
-    if (!wasActive) {
+    const target = closeNavigationTarget(titleWorkspace.close(titleId));
+    if (target.kind === "none") {
         return;
     }
 
-    if (!session) {
+    if (target.kind === "base") {
         await restoreBaseView(titleWorkspace.baseView);
         return;
     }
 
-    restoreTitleNavigationContext(titleSessionNavigationContext(session));
-    await goto(titleRouteForView(session.view));
+    restoreTitleNavigationContext(titleSessionNavigationContext(target.session));
+    await goto(titleRouteForView(target.session.view));
 }
 
 export async function activateBaseTab() {
