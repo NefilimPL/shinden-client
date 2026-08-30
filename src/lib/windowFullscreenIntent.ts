@@ -83,42 +83,6 @@ export function createWindowFullscreenIntent() {
             });
         },
 
-        async applyWindowPresentation(
-            appWindow: TaskbarPresentationWindow,
-            presentation: FullscreenPresentation,
-        ) {
-            const intentVersion = ++fullscreenIntentVersion;
-            intendedFullscreen = presentation === "immersive";
-
-            await queueWindowOperation(async () => {
-                if (intentVersion !== fullscreenIntentVersion) {
-                    return;
-                }
-
-                if (presentation === "immersive") {
-                    if (!(await appWindow.isFullscreen())) {
-                        if (intentVersion !== fullscreenIntentVersion || !intendedFullscreen) {
-                            return;
-                        }
-                        await appWindow.setFullscreen(true);
-                    }
-                    return;
-                }
-
-                if (await appWindow.isFullscreen()) {
-                    await appWindow.setFullscreen(false);
-                }
-
-                if (intentVersion !== fullscreenIntentVersion || intendedFullscreen) {
-                    return;
-                }
-
-                if (!(await appWindow.isMaximized())) {
-                    await appWindow.maximize();
-                }
-            });
-        },
-
         async restoreAfterElementFullscreenExit(
             appWindow: FullscreenWindow,
             fullscreenElement: Element | null,

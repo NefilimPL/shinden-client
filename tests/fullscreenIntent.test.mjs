@@ -31,21 +31,27 @@ function createMockWindow({ fullscreen = false, maximized = false } = {}) {
   };
 }
 
-test("applying immersive presentation hides the taskbar with native fullscreen", async () => {
+test("toggling immersive presentation hides the taskbar with native fullscreen", async () => {
   const intent = createWindowFullscreenIntent();
   const mockWindow = createMockWindow();
 
-  await intent.applyWindowPresentation(mockWindow.window, "immersive");
+  await intent.toggleWindowPresentation(mockWindow.window, "immersive");
 
   assert.deepEqual(mockWindow.calls, ["fullscreen:true"]);
   assert.equal(intent.isWindowFullscreenIntended(), true);
 });
 
-test("applying taskbar presentation exits native fullscreen before maximizing", async () => {
+test("does not expose direct presentation application while an iframe can be fullscreen", () => {
+  const intent = createWindowFullscreenIntent();
+
+  assert.equal("applyWindowPresentation" in intent, false);
+});
+
+test("toggling taskbar presentation exits native fullscreen before maximizing", async () => {
   const intent = createWindowFullscreenIntent();
   const mockWindow = createMockWindow({ fullscreen: true });
 
-  await intent.applyWindowPresentation(mockWindow.window, "taskbar");
+  await intent.toggleWindowPresentation(mockWindow.window, "taskbar");
 
   assert.deepEqual(mockWindow.calls, ["fullscreen:false", "maximize"]);
   assert.equal(intent.isWindowFullscreenIntended(), false);
@@ -75,7 +81,7 @@ test("does not reapply native fullscreen after a player exits when it is already
   assert.deepEqual(mockWindow.calls, []);
 });
 
-test("does not restore fullscreen after the user switches to taskbar mode mid-restore", async () => {
+test("does not restore fullscreen after a taskbar window toggle starts mid-restore", async () => {
   const intent = createWindowFullscreenIntent();
   let resolveFirstFullscreenCheck;
   let fullscreenChecks = 0;
@@ -108,7 +114,7 @@ test("does not restore fullscreen after the user switches to taskbar mode mid-re
   const restoration = intent.restoreAfterElementFullscreenExit(appWindow, null);
   await Promise.resolve();
 
-  const taskbar = intent.applyWindowPresentation(appWindow, "taskbar");
+  const taskbar = intent.toggleWindowPresentation(appWindow, "taskbar");
   resolveFirstFullscreenCheck(false);
 
   assert.equal(await restoration, false);
@@ -145,12 +151,12 @@ test("reapplies immersive fullscreen after it supersedes an in-flight taskbar ex
     },
   };
 
-  const taskbar = intent.applyWindowPresentation(appWindow, "taskbar");
+  const taskbar = intent.toggleWindowPresentation(appWindow, "taskbar");
   for (let attempt = 0; attempt < 3 && !resolveFullscreenExit; attempt += 1) {
     await Promise.resolve();
   }
   assert.equal(typeof resolveFullscreenExit, "function");
-  const immersive = intent.applyWindowPresentation(appWindow, "immersive");
+  const immersive = intent.toggleWindowPresentation(appWindow, "immersive");
 
   resolveFullscreenExit();
   await Promise.all([taskbar, immersive]);
