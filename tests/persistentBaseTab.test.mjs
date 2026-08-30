@@ -34,7 +34,7 @@ test("keeps the base tab selected when a title opens in the background", () => {
 
 test("returns to the base tab after closing the final title", () => {
   const opened = openTitleSession(createTitleWorkspaceState(), firstTitle, true).state;
-  const closed = closeTitleSession(opened, firstTitle.titleId);
+  const closed = closeTitleSession(opened, firstTitle.titleId).state;
 
   assert.deepEqual(closed.activeTab, { kind: "base" });
   assert.deepEqual(closed.tabs, []);

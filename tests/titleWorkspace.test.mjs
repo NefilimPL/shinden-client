@@ -60,17 +60,17 @@ test("switching to none layout clears title sessions and selects the base tab", 
   assert.deepEqual(hidden.tabs, []);
   assert.deepEqual(hidden.activeTab, { kind: "base" });
 });
-test("closing the active card selects its nearest neighbor and final close empties the workspace", () => {
+test("closing the active card selects its most recently viewed remaining card and final close empties the workspace", () => {
   const twoTabs = openTitleSession(
     openTitleSession(createTitleWorkspaceState(), kokoore).state,
     enen,
   ).state;
   const afterFirstClose = closeTitleSession(activateTitleSession(twoTabs, 71632), 71632);
-  const afterFinalClose = closeTitleSession(afterFirstClose, 59922);
+  const afterFinalClose = closeTitleSession(afterFirstClose.state, 59922);
 
-  assert.deepEqual(afterFirstClose.activeTab, { kind: "title", titleId: 59922 });
-  assert.deepEqual(afterFinalClose.tabs, []);
-  assert.deepEqual(afterFinalClose.activeTab, { kind: "base" });
+  assert.deepEqual(afterFirstClose.state.activeTab, { kind: "title", titleId: 59922 });
+  assert.deepEqual(afterFinalClose.state.tabs, []);
+  assert.deepEqual(afterFinalClose.state.activeTab, { kind: "base" });
 });
 
 test("closing the final title keeps the last base view context", () => {
@@ -80,7 +80,7 @@ test("closing the final title keeps the last base view context", () => {
     state: {},
   });
   const opened = openTitleSession(withBaseView, kokoore).state;
-  const closed = closeTitleSession(opened, kokoore.titleId);
+  const closed = closeTitleSession(opened, kokoore.titleId).state;
 
   assert.deepEqual(closed.activeTab, { kind: "base" });
   assert.deepEqual(closed.baseView, { id: "watchlist", scrollY: 380, state: {} });
@@ -160,4 +160,29 @@ test("shows the vertical card close control only for the active title", () => {
   assert.equal(titleTabPresentation("vertical", false, false).showClose, false);
   assert.equal(titleTabPresentation("vertical", true, false).showClose, true);
   assert.equal(titleTabPresentation("horizontal", false, false).showClose, true);
+});
+
+test("closing the active title restores the most recently viewed available title", () => {
+  const first = openTitleSession(createTitleWorkspaceState(), kokoore).state;
+  const second = openTitleSession(first, enen).state;
+  const revisitedFirst = activateTitleSession(second, kokoore.titleId);
+
+  const result = closeTitleSession(revisitedFirst, kokoore.titleId);
+
+  assert.equal(result.closed, true);
+  assert.equal(result.wasActive, true);
+  assert.equal(result.nextSession?.titleId, enen.titleId);
+  assert.deepEqual(result.state.recentlyViewedTitleIds, [enen.titleId]);
+});
+
+test("closing an inactive or absent title leaves the active title unchanged", () => {
+  const first = openTitleSession(createTitleWorkspaceState(), kokoore).state;
+  const twoTabs = openTitleSession(first, enen).state;
+
+  const inactive = closeTitleSession(twoTabs, kokoore.titleId);
+  const absent = closeTitleSession(inactive.state, kokoore.titleId);
+
+  assert.deepEqual(inactive.state.activeTab, { kind: "title", titleId: enen.titleId });
+  assert.equal(absent.closed, false);
+  assert.deepEqual(absent.state, inactive.state);
 });
