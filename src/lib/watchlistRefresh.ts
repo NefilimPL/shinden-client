@@ -51,9 +51,18 @@ export function loadWatchlistRefreshFilter(): WatchlistRefreshFilter {
         return { ...defaultWatchlistRefreshFilter };
     }
 
-    const storedSettings = localStorage.getItem(watchlistSettingsStorageKey);
+    return watchlistFilterWithStoredSettings(
+        localStorage.getItem(watchlistSettingsStorageKey),
+        defaultWatchlistRefreshFilter,
+    );
+}
+
+export function watchlistFilterWithStoredSettings(
+    storedSettings: string | null,
+    fallback: WatchlistRefreshFilter,
+): WatchlistRefreshFilter {
     if (!storedSettings) {
-        return { ...defaultWatchlistRefreshFilter };
+        return { ...fallback };
     }
 
     try {
@@ -70,7 +79,7 @@ export function loadWatchlistRefreshFilter(): WatchlistRefreshFilter {
             excludeAiSubtitles: Boolean(parsedSettings.excludeAiSubtitles),
         };
     } catch {
-        return { ...defaultWatchlistRefreshFilter };
+        return { ...fallback };
     }
 }
 

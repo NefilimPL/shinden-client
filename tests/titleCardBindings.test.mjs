@@ -31,6 +31,7 @@ test("title tab close control uses the single-shot controller", () => {
   const panel = readFileSync("src/lib/AnimeDetailsPanel.svelte", "utf8");
 
   assert.match(tabs, /createTitleTabCloseController/);
-  assert.match(tabs, /btn-xs size-8 absolute right-0 top-1\/2 z-10/);
+  assert.match(tabs, /btn-xs absolute right-0 top-1\/2 z-10/);
+  assert.doesNotMatch(tabs, /btn-xs size-8/);
   assert.match(panel, /Otwórz w Shinden/);
 });

@@ -9,6 +9,7 @@
     import { animeStatusOptions, titleIdFromSeriesUrl } from "$lib/shindenProgress";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
     import {
+        watchlistFilterWithStoredSettings,
         watchlistSettingsStorageKey,
         type WatchingCacheRefreshStatus,
         type WatchingCacheRefreshSummary,
@@ -60,9 +61,9 @@
     const viewModeStorageKey = "shinden:watchlist-view-mode";
 
     onMount(() => {
-        loadSettings();
         loadViewMode();
         restoreBaseState();
+        loadSettings();
         baseStateRestored = true;
         void loadWatchingAnime();
         void pollRefreshStatus();
@@ -115,25 +116,14 @@
     }
 
     function loadSettings() {
-        const storedSettings = localStorage.getItem(watchlistSettingsStorageKey);
-        if (!storedSettings) {
-            return;
-        }
-
-        try {
-            const parsedSettings = JSON.parse(storedSettings);
-            onlyAvailableUnwatched = Boolean(parsedSettings.onlyAvailableUnwatched);
-            subtitleLanguage =
-                typeof parsedSettings.subtitleLanguage === "string"
-                    ? parsedSettings.subtitleLanguage
-                    : "PL";
-            checkSubtitleAvailabilityOnline = Boolean(
-                parsedSettings.checkSubtitleAvailabilityOnline,
-            );
-            excludeAiSubtitles = Boolean(parsedSettings.excludeAiSubtitles);
-        } catch (e) {
-            log(LogLevel.WARNING, `Error loading watchlist settings: ${e}`);
-        }
+        const filter = watchlistFilterWithStoredSettings(
+            localStorage.getItem(watchlistSettingsStorageKey),
+            currentFilter(),
+        );
+        onlyAvailableUnwatched = filter.onlyAvailableUnwatched;
+        subtitleLanguage = filter.subtitleLanguage;
+        checkSubtitleAvailabilityOnline = filter.checkSubtitleAvailabilityOnline;
+        excludeAiSubtitles = filter.excludeAiSubtitles;
     }
 
     function saveSettings() {
