@@ -125,20 +125,8 @@
         }
     }
 
-    async function restoreWindowFullscreenAfterPlayerExit() {
-        if (typeof document === "undefined") {
-            return;
-        }
-
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await windowFullscreenIntent.restoreAfterElementFullscreenExit(
-            getCurrentWindow(),
-            document.fullscreenElement
-        );
-    }
-
     function handlePlayerFullscreenChange() {
-        void restoreWindowFullscreenAfterPlayerExit();
+        windowFullscreenIntent.handlePlayerFullscreenChange(document.fullscreenElement);
     }
 
 

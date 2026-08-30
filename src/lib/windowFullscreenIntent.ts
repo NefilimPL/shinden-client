@@ -17,6 +17,10 @@ export function createWindowFullscreenIntent() {
             intendedFullscreen = fullscreen;
         },
 
+        isWindowFullscreenIntended() {
+            return intendedFullscreen;
+        },
+
         async toggleWindowFullscreen(appWindow: FullscreenWindow) {
             const nextFullscreen = !(await appWindow.isFullscreen());
             intendedFullscreen = nextFullscreen;
@@ -45,16 +49,12 @@ export function createWindowFullscreenIntent() {
                 await appWindow.maximize();
             }
         },
-        async restoreAfterElementFullscreenExit(
-            appWindow: Pick<FullscreenWindow, "setFullscreen">,
-            fullscreenElement: Element | null
-        ) {
-            if (!intendedFullscreen || fullscreenElement) {
-                return false;
+        handlePlayerFullscreenChange(fullscreenElement: Element | null) {
+            if (fullscreenElement) {
+                return;
             }
 
-            await appWindow.setFullscreen(true);
-            return true;
+            intendedFullscreen = false;
         }
     };
 }

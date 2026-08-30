@@ -3,53 +3,25 @@ import { test } from "node:test";
 
 import { createWindowFullscreenIntent } from "../src/lib/windowFullscreenIntent.ts";
 
-function createMockWindow() {
-  const calls = [];
-
-  return {
-    calls,
-    window: {
-      async setFullscreen(value) {
-        calls.push(value);
-      }
-    }
-  };
-}
-
-test("restores GUI fullscreen after a player fullscreen element exits", async () => {
+test("clears window fullscreen intent after a player exits element fullscreen", () => {
   const intent = createWindowFullscreenIntent();
-  const mockWindow = createMockWindow();
+
+  intent.setIntendedFullscreen(true);
+  assert.equal(intent.isWindowFullscreenIntended(), true);
+
+  intent.handlePlayerFullscreenChange(null);
+
+  assert.equal(intent.isWindowFullscreenIntended(), false);
+});
+
+test("keeps window fullscreen intent while the player element is fullscreen", () => {
+  const intent = createWindowFullscreenIntent();
 
   intent.setIntendedFullscreen(true);
 
-  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, null);
+  intent.handlePlayerFullscreenChange({});
 
-  assert.equal(restored, true);
-  assert.deepEqual(mockWindow.calls, [true]);
-});
-
-test("does not restore GUI fullscreen when the user did not request it", async () => {
-  const intent = createWindowFullscreenIntent();
-  const mockWindow = createMockWindow();
-
-  intent.setIntendedFullscreen(false);
-
-  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, null);
-
-  assert.equal(restored, false);
-  assert.deepEqual(mockWindow.calls, []);
-});
-
-test("does not restore GUI fullscreen while a player element is still fullscreen", async () => {
-  const intent = createWindowFullscreenIntent();
-  const mockWindow = createMockWindow();
-
-  intent.setIntendedFullscreen(true);
-
-  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, {});
-
-  assert.equal(restored, false);
-  assert.deepEqual(mockWindow.calls, []);
+  assert.equal(intent.isWindowFullscreenIntended(), true);
 });
 
 test("taskbar presentation maximizes instead of enabling native fullscreen", async () => {
