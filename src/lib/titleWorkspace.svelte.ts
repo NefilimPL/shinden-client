@@ -72,8 +72,9 @@ export const titleWorkspace = {
     },
 
     close(titleId: number) {
-        state = closeTitleSession(state, titleId);
-        return activeTitleSession(state);
+        const result = closeTitleSession(state, titleId);
+        state = result.state;
+        return result;
     },
 
     activateBase() {

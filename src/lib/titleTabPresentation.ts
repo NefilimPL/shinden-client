@@ -14,6 +14,6 @@ export function titleTabPresentation(
     return {
         showImage: true,
         showLabel: layout === "horizontal" && (!compactLabels || isActive),
-        showClose: layout === "horizontal" || isActive,
+        showClose: true,
     };
 }

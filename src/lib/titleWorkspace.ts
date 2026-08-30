@@ -41,12 +41,20 @@ export type TitleSession = TitleOpenInput & {
 export type TitleWorkspaceState = TitleWorkspacePreferences & {
     baseView: BaseViewContext;
     tabs: TitleSession[];
+    recentlyViewedTitleIds: number[];
     activeTab: WorkspaceActiveTab;
 };
 
 export type TitleSessionOpenResult = {
     state: TitleWorkspaceState;
     created: boolean;
+};
+
+export type TitleSessionCloseResult = {
+    state: TitleWorkspaceState;
+    closed: boolean;
+    wasActive: boolean;
+    nextSession: TitleSession | null;
 };
 
 const defaultPreferences: TitleWorkspacePreferences = {
@@ -87,6 +95,7 @@ export function createTitleWorkspaceState(
 ): TitleWorkspaceState {
     return {
         tabs: [],
+        recentlyViewedTitleIds: [],
         baseView: { id: "watchlist", scrollY: 0, state: {} },
         activeTab: { kind: "base" },
         layout: isWorkspaceLayout(preferences.layout) ? preferences.layout : defaultPreferences.layout,
@@ -109,7 +118,11 @@ export function openTitleSession(
     if (existing) {
         return {
             state: activate
-                ? { ...state, activeTab: { kind: "title", titleId: existing.titleId } }
+                ? {
+                    ...state,
+                    activeTab: { kind: "title", titleId: existing.titleId },
+                    recentlyViewedTitleIds: touchRecentlyViewed(state.recentlyViewedTitleIds, existing.titleId),
+                }
                 : state,
             created: false,
         };
@@ -121,6 +134,9 @@ export function openTitleSession(
             ...state,
             tabs: [...state.tabs, session],
             activeTab: activate ? { kind: "title", titleId: session.titleId } : state.activeTab,
+            recentlyViewedTitleIds: activate
+                ? touchRecentlyViewed(state.recentlyViewedTitleIds, session.titleId)
+                : state.recentlyViewedTitleIds,
         },
         created: true,
     };
@@ -131,7 +147,11 @@ export function activateTitleSession(state: TitleWorkspaceState, titleId: number
         return state;
     }
 
-    return { ...state, activeTab: { kind: "title", titleId } };
+    return {
+        ...state,
+        activeTab: { kind: "title", titleId },
+        recentlyViewedTitleIds: touchRecentlyViewed(state.recentlyViewedTitleIds, titleId),
+    };
 }
 
 export function activateBaseSession(state: TitleWorkspaceState): TitleWorkspaceState {
@@ -144,24 +164,37 @@ export function saveBaseViewContext(
 ): TitleWorkspaceState {
     return { ...state, baseView };
 }
-export function closeTitleSession(state: TitleWorkspaceState, titleId: number): TitleWorkspaceState {
-    const index = state.tabs.findIndex((tab) => tab.titleId === titleId);
-    if (index < 0) {
-        return state;
+export function closeTitleSession(state: TitleWorkspaceState, titleId: number): TitleSessionCloseResult {
+    const tabExists = state.tabs.some((tab) => tab.titleId === titleId);
+    if (!tabExists) {
+        return {
+            state,
+            closed: false,
+            wasActive: false,
+            nextSession: activeTitleSession(state),
+        };
     }
 
+    const wasActive = state.activeTab.kind === "title" && state.activeTab.titleId === titleId;
     const tabs = state.tabs.filter((tab) => tab.titleId !== titleId);
-    if (state.activeTab.kind !== "title" || state.activeTab.titleId !== titleId) {
-        return { ...state, tabs };
-    }
-
-    const nextActive = tabs[index] ?? tabs[index - 1];
-    return {
+    const recentlyViewedTitleIds = state.recentlyViewedTitleIds.filter((id) => id !== titleId);
+    const nextTitleId = wasActive
+        ? availableRecentlyViewedTitleId(recentlyViewedTitleIds, tabs)
+        : null;
+    const nextState: TitleWorkspaceState = {
         ...state,
         tabs,
-        activeTab: nextActive
-            ? { kind: "title", titleId: nextActive.titleId }
-            : { kind: "base" },
+        recentlyViewedTitleIds,
+        activeTab: wasActive
+            ? nextTitleId === null ? { kind: "base" } : { kind: "title", titleId: nextTitleId }
+            : state.activeTab,
+    };
+
+    return {
+        state: nextState,
+        closed: true,
+        wasActive,
+        nextSession: activeTitleSession(nextState),
     };
 }
 
@@ -195,6 +228,7 @@ export function setWorkspaceLayout(
         ...state,
         layout,
         tabs: [],
+        recentlyViewedTitleIds: [],
         activeTab: { kind: "base" },
     };
 }
@@ -236,6 +270,17 @@ function createTitleSession(input: TitleOpenInput): TitleSession {
         episodeProgress: [],
         currentEpisodeIndex: -1,
     };
+}
+
+function touchRecentlyViewed(titleIds: number[], titleId: number): number[] {
+    return [titleId, ...titleIds.filter((id) => id !== titleId)];
+}
+
+function availableRecentlyViewedTitleId(
+    recentlyViewedTitleIds: number[],
+    tabs: TitleSession[],
+): number | null {
+    return recentlyViewedTitleIds.find((titleId) => tabs.some((tab) => tab.titleId === titleId)) ?? null;
 }
 
 function isWorkspaceLayout(value: unknown): value is TitleWorkspaceLayout {

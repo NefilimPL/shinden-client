@@ -2,11 +2,12 @@
     import { titleTabPresentation } from "$lib/titleTabPresentation";
     import { baseViewLabel } from "$lib/baseViewState";
     import { activateBaseTab, activateTitleTab, closeTitleTab } from "$lib/titleNavigation";
-    import { closeTitleTabFromControl } from "$lib/titleTabCloseInteraction";
+    import { createTitleTabCloseController } from "$lib/titleTabCloseInteraction";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     let rail = $state<HTMLElement | null>(null);
     let compactLabels = $state(false);
+    const titleTabCloseController = createTitleTabCloseController();
 
     function updateCompactLabels() {
         compactLabels = (rail?.clientWidth ?? Infinity) < titleWorkspace.tabs.length * 180;
@@ -75,10 +76,10 @@
                 {#if presentation.showClose}
                     <button
                     type="button"
-                    class="btn btn-circle btn-ghost btn-xs absolute right-0 top-1/2 z-10 -translate-y-1/2"
+                    class="absolute inset-y-0 right-0 z-10 my-auto flex h-7 w-7 items-center justify-center rounded-full text-base-content/70 hover:bg-base-300 hover:text-base-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
                     aria-label={`Zamknij ${tab.name}`}
                     title={`Zamknij ${tab.name}`}
-                    onclick={(event) => closeTitleTabFromControl(event, () => { void closeTitleTab(tab.titleId); })}
+                    onclick={(event) => { void titleTabCloseController.close(event, tab.titleId, () => closeTitleTab(tab.titleId)); }}
                     >
                         <svg class="size-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"></path>
