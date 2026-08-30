@@ -1,6 +1,7 @@
 <script lang="ts">
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     import type { FullscreenPresentation, TitleWorkspaceLayout } from "$lib/titleWorkspace";
+    import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
 
     const layoutOptions: Array<{ value: TitleWorkspaceLayout; label: string }> = [
         { value: "vertical", label: "Karty pionowe" },
@@ -17,8 +18,10 @@
         titleWorkspace.setLayout(layout);
     }
 
-    function setFullscreenPresentation(presentation: FullscreenPresentation) {
+    async function setFullscreenPresentation(presentation: FullscreenPresentation) {
         titleWorkspace.setFullscreenPresentation(presentation);
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await windowFullscreenIntent.applyWindowPresentation(getCurrentWindow(), presentation);
     }
 </script>
 
@@ -56,7 +59,7 @@
                     class="btn btn-sm justify-start"
                     class:btn-primary={titleWorkspace.fullscreenPresentation === option.value}
                     aria-pressed={titleWorkspace.fullscreenPresentation === option.value}
-                    onclick={() => setFullscreenPresentation(option.value)}
+                    onclick={() => { void setFullscreenPresentation(option.value); }}
                 >
                     {option.label}
                 </button>

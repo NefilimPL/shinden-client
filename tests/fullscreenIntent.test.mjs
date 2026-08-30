@@ -3,36 +3,95 @@ import { test } from "node:test";
 
 import { createWindowFullscreenIntent } from "../src/lib/windowFullscreenIntent.ts";
 
-test("clears window fullscreen intent after a player exits element fullscreen", () => {
+function createMockWindow({ fullscreen = false, maximized = false } = {}) {
+  const calls = [];
+
+  return {
+    calls,
+    window: {
+      async setFullscreen(value) {
+        calls.push(`fullscreen:${value}`);
+        fullscreen = value;
+      },
+      async isFullscreen() {
+        return fullscreen;
+      },
+      async isMaximized() {
+        return maximized;
+      },
+      async maximize() {
+        calls.push("maximize");
+        maximized = true;
+      },
+      async unmaximize() {
+        calls.push("unmaximize");
+        maximized = false;
+      },
+    },
+  };
+}
+
+test("applying immersive presentation hides the taskbar with native fullscreen", async () => {
   const intent = createWindowFullscreenIntent();
+  const mockWindow = createMockWindow();
 
-  intent.setIntendedFullscreen(true);
+  await intent.applyWindowPresentation(mockWindow.window, "immersive");
+
+  assert.deepEqual(mockWindow.calls, ["fullscreen:true"]);
   assert.equal(intent.isWindowFullscreenIntended(), true);
+});
 
-  intent.handlePlayerFullscreenChange(null);
+test("applying taskbar presentation exits native fullscreen before maximizing", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mockWindow = createMockWindow({ fullscreen: true });
 
+  await intent.applyWindowPresentation(mockWindow.window, "taskbar");
+
+  assert.deepEqual(mockWindow.calls, ["fullscreen:false", "maximize"]);
   assert.equal(intent.isWindowFullscreenIntended(), false);
 });
 
-test("keeps window fullscreen intent while the player element is fullscreen", () => {
+test("restores native fullscreen after a player exits only when the window left it", async () => {
   const intent = createWindowFullscreenIntent();
+  const mockWindow = createMockWindow();
 
   intent.setIntendedFullscreen(true);
 
-  intent.handlePlayerFullscreenChange({});
+  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, null);
 
-  assert.equal(intent.isWindowFullscreenIntended(), true);
+  assert.equal(restored, true);
+  assert.deepEqual(mockWindow.calls, ["fullscreen:true"]);
 });
 
-test("taskbar presentation maximizes instead of enabling native fullscreen", async () => {
+test("does not reapply native fullscreen after a player exits when it is already active", async () => {
   const intent = createWindowFullscreenIntent();
+  const mockWindow = createMockWindow({ fullscreen: true });
+
+  intent.setIntendedFullscreen(true);
+
+  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, null);
+
+  assert.equal(restored, false);
+  assert.deepEqual(mockWindow.calls, []);
+});
+
+test("does not restore fullscreen after the user switches to taskbar mode mid-restore", async () => {
+  const intent = createWindowFullscreenIntent();
+  let resolveFirstFullscreenCheck;
+  let fullscreenChecks = 0;
   const calls = [];
   const appWindow = {
     async setFullscreen(value) {
       calls.push(`fullscreen:${value}`);
     },
-    async isFullscreen() {
-      return false;
+    isFullscreen() {
+      fullscreenChecks += 1;
+      if (fullscreenChecks === 1) {
+        return new Promise((resolve) => {
+          resolveFirstFullscreenCheck = resolve;
+        });
+      }
+      return Promise.resolve(false);
     },
     async isMaximized() {
       return false;
@@ -45,33 +104,68 @@ test("taskbar presentation maximizes instead of enabling native fullscreen", asy
     },
   };
 
-  await intent.toggleWindowPresentation(appWindow, "taskbar");
+  intent.setIntendedFullscreen(true);
+  const restoration = intent.restoreAfterElementFullscreenExit(appWindow, null);
+  await Promise.resolve();
 
-test("taskbar presentation exits native fullscreen before maximizing", async () => {
-  const intent = createWindowFullscreenIntent();
-  const calls = [];
-  const appWindow = {
-    async setFullscreen(value) {
-      calls.push(`fullscreen:${value}`);
-    },
-    async isFullscreen() {
-      return true;
-    },
-    async isMaximized() {
-      return false;
-    },
-    async maximize() {
-      calls.push("maximize");
-    },
-    async unmaximize() {
-      calls.push("unmaximize");
-    },
-  };
+  const taskbar = intent.applyWindowPresentation(appWindow, "taskbar");
+  resolveFirstFullscreenCheck(false);
 
-  await intent.toggleWindowPresentation(appWindow, "taskbar");
-
-  assert.deepEqual(calls, ["fullscreen:false", "maximize"]);
-});
-
+  assert.equal(await restoration, false);
+  await taskbar;
   assert.deepEqual(calls, ["maximize"]);
+});
+
+test("reapplies immersive fullscreen after it supersedes an in-flight taskbar exit", async () => {
+  const intent = createWindowFullscreenIntent();
+  let fullscreen = true;
+  let resolveFullscreenExit;
+  const calls = [];
+  const appWindow = {
+    async setFullscreen(value) {
+      calls.push(`fullscreen:${value}`);
+      if (!value) {
+        await new Promise((resolve) => {
+          resolveFullscreenExit = resolve;
+        });
+      }
+      fullscreen = value;
+    },
+    async isFullscreen() {
+      return fullscreen;
+    },
+    async isMaximized() {
+      return false;
+    },
+    async maximize() {
+      calls.push("maximize");
+    },
+    async unmaximize() {
+      calls.push("unmaximize");
+    },
+  };
+
+  const taskbar = intent.applyWindowPresentation(appWindow, "taskbar");
+  for (let attempt = 0; attempt < 3 && !resolveFullscreenExit; attempt += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(typeof resolveFullscreenExit, "function");
+  const immersive = intent.applyWindowPresentation(appWindow, "immersive");
+
+  resolveFullscreenExit();
+  await Promise.all([taskbar, immersive]);
+
+  assert.deepEqual(calls, ["fullscreen:false", "fullscreen:true"]);
+});
+
+test("does not restore the window while a player element remains fullscreen", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mockWindow = createMockWindow();
+
+  intent.setIntendedFullscreen(true);
+
+  const restored = await intent.restoreAfterElementFullscreenExit(mockWindow.window, {});
+
+  assert.equal(restored, false);
+  assert.deepEqual(mockWindow.calls, []);
 });

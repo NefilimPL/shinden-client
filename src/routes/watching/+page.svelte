@@ -10,12 +10,10 @@
     import type { EpisodeProgress } from "$lib/types";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
     import { enableIframeFullscreen } from "$lib/playerIframe";
-    import { requestEmbeddedPlayerFullscreen } from "$lib/playerFullscreen";
     import { playerLoadErrorMessage } from "$lib/playerLoadError";
 
     let isBuiltIn: boolean = $state(false);
     let iframeHtml: string = $state("");
-    let iframeContainer: HTMLDivElement | null = $state(null);
     let videoElement: HTMLVideoElement | null = $state(null);
     let dashPlayer: dashjs.MediaPlayerClass | null = null;
     let pendingVideoUrl: string | null = $state(null);
@@ -127,23 +125,20 @@
         }
     }
 
-    function handlePlayerFullscreenChange() {
-        windowFullscreenIntent.handlePlayerFullscreenChange(document.fullscreenElement);
-    }
-
-    async function fullscreenEmbeddedPlayer() {
-        if (!iframeContainer) {
+    async function restoreWindowFullscreenAfterPlayerExit() {
+        if (typeof document === "undefined") {
             return;
         }
 
-        try {
-            const requested = await requestEmbeddedPlayerFullscreen(iframeContainer);
-            if (!requested) {
-                log(LogLevel.ERROR, "Nie znaleziono iframe playera");
-            }
-        } catch (e) {
-            log(LogLevel.ERROR, `Nie można otworzyć playera na pełnym ekranie: ${e}`);
-        }
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await windowFullscreenIntent.restoreAfterElementFullscreenExit(
+            getCurrentWindow(),
+            document.fullscreenElement,
+        );
+    }
+
+    function handlePlayerFullscreenChange() {
+        void restoreWindowFullscreenAfterPlayerExit();
     }
 
 
@@ -213,12 +208,6 @@
     });
 </script>
 
-<style>
-    :global(iframe:fullscreen) {
-        outline: none;
-    }
-</style>
-
 <div class="h-full w-full flex flex-col">
     {#if globalStates.loadingState === LoadingState.LOADING}
         <div class="flex flex-1 items-center justify-center">
@@ -265,15 +254,7 @@
             </div>
             {:else}
             <div class="w-full h-full p-4 pb-28 md:p-6 md:pb-28 flex items-center justify-center">
-                <div bind:this={iframeContainer} class="relative h-full w-full overflow-hidden rounded-2xl shadow-2xl [&>iframe]:block [&>iframe]:h-full [&>iframe]:w-full [&>iframe]:border-0">
-                    <button
-                        class="btn btn-circle btn-sm absolute right-3 top-3 z-10 bg-base-300/90"
-                        title="Pełny ekran playera"
-                        aria-label="Pełny ekran playera"
-                        onclick={() => { void fullscreenEmbeddedPlayer(); }}
-                    >
-                        ⛶
-                    </button>
+                <div class="h-full w-full overflow-hidden rounded-2xl shadow-2xl [&>iframe]:block [&>iframe]:h-full [&>iframe]:w-full [&>iframe]:border-0">
                     {@html iframeHtml}
                 </div>
             </div>
