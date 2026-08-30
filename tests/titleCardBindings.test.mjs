@@ -26,12 +26,15 @@ test("related-series cards support background opening", () => {
   assert.match(episodePage, /openAnimeTitleInBackground/);
 });
 
-test("title tab close control uses the single-shot controller", () => {
+test("title tab close control has a fixed, transform-free hit area", () => {
   const tabs = readFileSync("src/lib/TitleTabs.svelte", "utf8");
   const panel = readFileSync("src/lib/AnimeDetailsPanel.svelte", "utf8");
+  const closeControlStart = tabs.indexOf("{#if presentation.showClose}");
+  const closeControlEnd = tabs.indexOf("</button>", closeControlStart);
+  const closeControl = tabs.slice(closeControlStart, closeControlEnd);
 
   assert.match(tabs, /createTitleTabCloseController/);
-  assert.match(tabs, /btn-xs absolute right-0 top-1\/2 z-10/);
-  assert.doesNotMatch(tabs, /btn-xs size-8/);
+  assert.match(closeControl, /absolute inset-y-0 right-0 z-10 my-auto/);
+  assert.doesNotMatch(closeControl, /btn-circle|btn-ghost|btn-xs|-translate-y-1\/2/);
   assert.match(panel, /Otwórz w Shinden/);
 });

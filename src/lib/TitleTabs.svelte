@@ -76,7 +76,7 @@
                 {#if presentation.showClose}
                     <button
                     type="button"
-                    class="btn btn-circle btn-ghost btn-xs absolute right-0 top-1/2 z-10 -translate-y-1/2"
+                    class="absolute inset-y-0 right-0 z-10 my-auto flex h-7 w-7 items-center justify-center rounded-full text-base-content/70 hover:bg-base-300 hover:text-base-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
                     aria-label={`Zamknij ${tab.name}`}
                     title={`Zamknij ${tab.name}`}
                     onclick={(event) => { void titleTabCloseController.close(event, tab.titleId, () => closeTitleTab(tab.titleId)); }}
