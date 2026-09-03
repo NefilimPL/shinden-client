@@ -1,8 +1,10 @@
 import type { FullscreenPresentation } from "$lib/titleWorkspace";
+
 export type FullscreenWindow = {
     setFullscreen(fullscreen: boolean): Promise<void>;
     isFullscreen(): Promise<boolean>;
 };
+
 export type TaskbarPresentationWindow = FullscreenWindow & {
     isMaximized(): Promise<boolean>;
     maximize(): Promise<void>;
@@ -11,51 +13,102 @@ export type TaskbarPresentationWindow = FullscreenWindow & {
 
 export function createWindowFullscreenIntent() {
     let intendedFullscreen = false;
+    let fullscreenIntentVersion = 0;
+    let windowOperation = Promise.resolve();
+
+    function queueWindowOperation<T>(operation: () => Promise<T>): Promise<T> {
+        const queuedOperation = windowOperation.then(operation, operation);
+        windowOperation = queuedOperation.then(
+            () => undefined,
+            () => undefined,
+        );
+        return queuedOperation;
+    }
+
+    async function toggleWindowFullscreen(appWindow: FullscreenWindow) {
+        const intentVersion = ++fullscreenIntentVersion;
+
+        await queueWindowOperation(async () => {
+            const nextFullscreen = !(await appWindow.isFullscreen());
+            if (intentVersion !== fullscreenIntentVersion) {
+                return;
+            }
+
+            intendedFullscreen = nextFullscreen;
+            await appWindow.setFullscreen(nextFullscreen);
+        });
+    }
 
     return {
         setIntendedFullscreen(fullscreen: boolean) {
             intendedFullscreen = fullscreen;
+            fullscreenIntentVersion += 1;
         },
 
-        async toggleWindowFullscreen(appWindow: FullscreenWindow) {
-            const nextFullscreen = !(await appWindow.isFullscreen());
-            intendedFullscreen = nextFullscreen;
-            await appWindow.setFullscreen(nextFullscreen);
+        isWindowFullscreenIntended() {
+            return intendedFullscreen;
         },
+
+        toggleWindowFullscreen,
+
         async toggleWindowPresentation(
             appWindow: TaskbarPresentationWindow,
             presentation: FullscreenPresentation,
         ) {
             if (presentation === "immersive") {
-                const nextFullscreen = !(await appWindow.isFullscreen());
-                intendedFullscreen = nextFullscreen;
-                await appWindow.setFullscreen(nextFullscreen);
+                await toggleWindowFullscreen(appWindow);
                 return;
             }
 
+            const intentVersion = ++fullscreenIntentVersion;
             intendedFullscreen = false;
-            if (await appWindow.isFullscreen()) {
-                await appWindow.setFullscreen(false);
-            }
+            await queueWindowOperation(async () => {
+                if (intentVersion !== fullscreenIntentVersion || intendedFullscreen) {
+                    return;
+                }
 
-            if (await appWindow.isMaximized()) {
+                if (await appWindow.isFullscreen()) {
+                    await appWindow.setFullscreen(false);
+                }
 
-                await appWindow.unmaximize();
-            } else {
-                await appWindow.maximize();
-            }
+                if (intentVersion !== fullscreenIntentVersion || intendedFullscreen) {
+                    return;
+                }
+
+                if (await appWindow.isMaximized()) {
+                    await appWindow.unmaximize();
+                } else {
+                    await appWindow.maximize();
+                }
+            });
         },
+
         async restoreAfterElementFullscreenExit(
-            appWindow: Pick<FullscreenWindow, "setFullscreen">,
-            fullscreenElement: Element | null
+            appWindow: FullscreenWindow,
+            fullscreenElement: Element | null,
         ) {
+            const intentVersion = fullscreenIntentVersion;
             if (!intendedFullscreen || fullscreenElement) {
                 return false;
             }
 
-            await appWindow.setFullscreen(true);
-            return true;
-        }
+            return queueWindowOperation(async () => {
+                if (intentVersion !== fullscreenIntentVersion || !intendedFullscreen) {
+                    return false;
+                }
+
+                if (await appWindow.isFullscreen()) {
+                    return false;
+                }
+
+                if (intentVersion !== fullscreenIntentVersion || !intendedFullscreen) {
+                    return false;
+                }
+
+                await appWindow.setFullscreen(true);
+                return true;
+            });
+        },
     };
 }
 

@@ -9,11 +9,19 @@
     import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import type { EpisodeProgress } from "$lib/types";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
-    import { enableIframeFullscreen } from "$lib/playerIframe";
+    import {
+        enableIframeFullscreen,
+        exitEmbeddedPlayerFullscreen,
+        requestEmbeddedPlayerFullscreen,
+    } from "$lib/playerIframe";
     import { playerLoadErrorMessage } from "$lib/playerLoadError";
 
     let isBuiltIn: boolean = $state(false);
     let iframeHtml: string = $state("");
+    let iframeContainer: HTMLDivElement | null = $state(null);
+    let isEmbeddedPlayerFullscreen: boolean = $state(false);
+    let fullscreenControlsVisible: boolean = $state(false);
+    let fullscreenControlsTimer: ReturnType<typeof setTimeout> | null = null;
     let videoElement: HTMLVideoElement | null = $state(null);
     let dashPlayer: dashjs.MediaPlayerClass | null = null;
     let pendingVideoUrl: string | null = $state(null);
@@ -133,12 +141,64 @@
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await windowFullscreenIntent.restoreAfterElementFullscreenExit(
             getCurrentWindow(),
-            document.fullscreenElement
+            document.fullscreenElement,
         );
     }
 
     function handlePlayerFullscreenChange() {
+        isEmbeddedPlayerFullscreen = document.fullscreenElement === iframeContainer;
+        if (isEmbeddedPlayerFullscreen) {
+            revealFullscreenControls();
+        } else {
+            clearFullscreenControlsTimer();
+            fullscreenControlsVisible = false;
+        }
+
         void restoreWindowFullscreenAfterPlayerExit();
+    }
+
+    function clearFullscreenControlsTimer() {
+        if (fullscreenControlsTimer) {
+            clearTimeout(fullscreenControlsTimer);
+            fullscreenControlsTimer = null;
+        }
+    }
+
+    function revealFullscreenControls() {
+        if (!isEmbeddedPlayerFullscreen) {
+            return;
+        }
+
+        clearFullscreenControlsTimer();
+        fullscreenControlsVisible = true;
+        fullscreenControlsTimer = setTimeout(() => {
+            fullscreenControlsVisible = false;
+            fullscreenControlsTimer = null;
+        }, 2500);
+    }
+
+    async function fullscreenEmbeddedPlayer() {
+        if (!iframeContainer) {
+            return;
+        }
+
+        try {
+            await requestEmbeddedPlayerFullscreen(iframeContainer);
+        } catch (e) {
+            log(LogLevel.ERROR, `Nie można otworzyć playera na pełnym ekranie: ${e}`);
+        }
+    }
+
+    async function exitFullscreenEmbeddedPlayer() {
+        if (!iframeContainer || typeof document === "undefined") {
+            return;
+        }
+
+        try {
+            await exitEmbeddedPlayerFullscreen(document, iframeContainer);
+        } catch (e) {
+            log(LogLevel.ERROR, `Nie można wyjść z pełnego ekranu playera: ${e}`);
+        }
     }
 
 
@@ -203,6 +263,7 @@
             document.removeEventListener("fullscreenchange", handlePlayerFullscreenChange);
         }
 
+        clearFullscreenControlsTimer();
         dashPlayer?.reset();
         dashPlayer = null;
     });
@@ -254,8 +315,59 @@
             </div>
             {:else}
             <div class="w-full h-full p-4 pb-28 md:p-6 md:pb-28 flex items-center justify-center">
-                <div class="h-full w-full overflow-hidden rounded-2xl shadow-2xl [&>iframe]:block [&>iframe]:h-full [&>iframe]:w-full [&>iframe]:border-0">
-                    {@html iframeHtml}
+                <div bind:this={iframeContainer} class="relative flex h-full w-full flex-col">
+                    {#if !isEmbeddedPlayerFullscreen}
+                    <div class="flex shrink-0 justify-end pb-2">
+                        <button
+                            class="btn btn-sm btn-ghost"
+                            title="Pełny ekran playera"
+                            aria-label="Pełny ekran playera"
+                            onclick={() => { void fullscreenEmbeddedPlayer(); }}
+                        >
+                            <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+                                <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
+                                    <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                                    <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+                                    <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+                                    <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                                </g>
+                            </svg>
+                            Pełny ekran playera
+                        </button>
+                    </div>
+                    {/if}
+                    <div class="min-h-0 w-full flex-1 overflow-hidden rounded-2xl shadow-2xl [&>iframe]:block [&>iframe]:h-full [&>iframe]:w-full [&>iframe]:border-0">
+                        {@html iframeHtml}
+                    </div>
+
+                    {#if isEmbeddedPlayerFullscreen}
+                        <button
+                            class="absolute inset-x-0 top-0 z-20 h-3 opacity-0"
+                            aria-label="Pokaż sterowanie pełnym ekranem"
+                            onclick={revealFullscreenControls}
+                            onpointerenter={revealFullscreenControls}
+                            onfocus={revealFullscreenControls}
+                        ></button>
+                        <div
+                            class="absolute right-4 top-4 z-30 transition-opacity"
+                            class:opacity-0={!fullscreenControlsVisible}
+                            class:pointer-events-none={!fullscreenControlsVisible}
+                        >
+                            <button
+                                class="btn btn-sm btn-neutral shadow-lg"
+                                title="Wyjdź z pełnego ekranu"
+                                onclick={() => { void exitFullscreenEmbeddedPlayer(); }}
+                            >
+                                <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+                                    <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor">
+                                        <path d="m6 6 12 12"></path>
+                                        <path d="M6 18 18 6"></path>
+                                    </g>
+                                </svg>
+                                Wyjdź
+                            </button>
+                        </div>
+                    {/if}
                 </div>
             </div>
             {/if}

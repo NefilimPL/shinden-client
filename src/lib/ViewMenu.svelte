@@ -56,7 +56,7 @@
                     class="btn btn-sm justify-start"
                     class:btn-primary={titleWorkspace.fullscreenPresentation === option.value}
                     aria-pressed={titleWorkspace.fullscreenPresentation === option.value}
-                    onclick={() => setFullscreenPresentation(option.value)}
+                    onclick={() => { setFullscreenPresentation(option.value); }}
                 >
                     {option.label}
                 </button>
