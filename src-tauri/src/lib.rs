@@ -7,8 +7,96 @@ use shinden_pl_api::client_backend::{
 };
 use shinden_pl_api::details::{AnimeDetails, AnimeRatingUpdate};
 use shinden_pl_api::models::{Episode, Player, SearchFilterCatalog, SearchFilterRequest};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::Manager;
 
 mod updater_commands;
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct TrayPreferences {
+    close_to_tray: bool,
+}
+
+struct CloseToTrayState(Mutex<TrayPreferences>);
+
+impl Default for CloseToTrayState {
+    fn default() -> Self {
+        Self(Mutex::new(TrayPreferences::default()))
+    }
+}
+
+impl CloseToTrayState {
+    fn enabled(&self) -> Result<bool, String> {
+        self.0
+            .lock()
+            .map(|preferences| preferences.close_to_tray)
+            .map_err(|_| "Nie udalo sie odczytac ustawienia zasobnika systemowego".to_string())
+    }
+
+    fn replace(&self, preferences: TrayPreferences) -> Result<(), String> {
+        let mut current = self.0
+            .lock()
+            .map_err(|_| "Nie udalo sie zapisac ustawienia zasobnika systemowego".to_string())?;
+        *current = preferences;
+        Ok(())
+    }
+}
+
+fn should_hide_to_tray(close_to_tray: bool) -> bool {
+    close_to_tray
+}
+
+fn tray_preferences_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map(|directory| directory.join("tray-preferences.json"))
+        .map_err(|error| format!("Nie udalo sie znalezc katalogu ustawien: {error}"))
+}
+
+fn load_tray_preferences(app: &tauri::AppHandle) -> TrayPreferences {
+    tray_preferences_path(app)
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|contents| serde_json::from_str::<TrayPreferences>(&contents).ok())
+        .unwrap_or_default()
+}
+
+fn save_tray_preferences(app: &tauri::AppHandle, preferences: &TrayPreferences) -> Result<(), String> {
+    let path = tray_preferences_path(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Nie udalo sie utworzyc katalogu ustawien: {error}"))?;
+    }
+    let contents = serde_json::to_string_pretty(preferences)
+        .map_err(|error| format!("Nie udalo sie zapisac ustawienia zasobnika systemowego: {error}"))?;
+    fs::write(path, contents)
+        .map_err(|error| format!("Nie udalo sie zapisac ustawienia zasobnika systemowego: {error}"))
+}
+
+#[tauri::command]
+fn get_close_to_tray_enabled(
+    state: tauri::State<'_, CloseToTrayState>,
+) -> Result<bool, String> {
+    state.enabled()
+}
+
+#[tauri::command]
+fn set_close_to_tray_enabled(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CloseToTrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut preferences = state.0
+        .lock()
+        .map_err(|_| "Nie udalo sie zapisac ustawienia zasobnika systemowego".to_string())?;
+    let updated = TrayPreferences { close_to_tray: enabled };
+    save_tray_preferences(&app, &updated)?;
+    *preferences = updated;
+    Ok(())
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -316,7 +404,54 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .manage(backend)
+        .manage(CloseToTrayState::default())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let preferences = load_tray_preferences(&app.handle());
+            app.state::<CloseToTrayState>().replace(preferences)?;
+
+            let show_item = tauri::menu::MenuItem::with_id(app, "show", "Pokaz aplikacje", true, None::<&str>)?;
+            let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Zakoncz aplikacje", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
+            let icon = app
+                .default_window_icon()
+                .cloned()
+                .ok_or_else(|| std::io::Error::other("Brak ikony aplikacji dla zasobnika systemowego"))?;
+            tauri::tray::TrayIconBuilder::with_id("main")
+                .icon(icon)
+                .tooltip("Shinden Client")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+
+            let app_handle = app.handle().clone();
+            if let Some(main_window) = app.get_webview_window("main") {
+                let window_for_events = main_window.clone();
+                main_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let close_to_tray = app_handle
+                            .state::<CloseToTrayState>()
+                            .enabled()
+                            .unwrap_or(false);
+                        if should_hide_to_tray(close_to_tray) {
+                            api.prevent_close();
+                            let _ = window_for_events.hide();
+                        }
+                    }
+                });
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             write_log,
@@ -345,6 +480,8 @@ pub fn run() {
             logout,
             get_user_name,
             get_user_profile_image,
+            get_close_to_tray_enabled,
+            set_close_to_tray_enabled,
             get_episodes,
             get_players,
             get_iframe,
@@ -366,6 +503,17 @@ mod updater_command_tests {
     use super::updater_commands::{
         release_manifest_endpoint, release_manifest_versions_from_tag, release_version_from_tag,
     };
+    use super::should_hide_to_tray;
+
+    #[test]
+    fn close_to_tray_defaults_to_exiting() {
+        assert!(!should_hide_to_tray(false));
+    }
+
+    #[test]
+    fn close_to_tray_hides_only_when_enabled() {
+        assert!(should_hide_to_tray(true));
+    }
 
     #[test]
     fn release_manifest_endpoint_accepts_known_release_tags() {

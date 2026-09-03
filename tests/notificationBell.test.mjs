@@ -11,3 +11,11 @@ test("notification bell exposes an accessible reduced-motion history panel", () 
   assert.match(source, /prefers-reduced-motion/);
   assert.match(source, /markRead/);
 });
+
+test("view menu exposes the persisted close-to-tray setting", () => {
+  const source = readFileSync("src/lib/ViewMenu.svelte", "utf8");
+
+  assert.match(source, /get_close_to_tray_enabled/);
+  assert.match(source, /set_close_to_tray_enabled/);
+  assert.match(source, /Zamykaj do zasobnika systemowego/);
+});

@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [ "macos-private-api", "unstable"] }
+tauri = { version = "2", features = [ "macos-private-api", "tray-icon", "unstable"] }
 tauri-plugin-opener = "2"
 shinden-pl-api = { path = "../../shinden-pl-api-rs" }
 cda-dl = "0.1.0"

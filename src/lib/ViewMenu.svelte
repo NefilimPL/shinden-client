@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { invoke } from "@tauri-apps/api/core";
+    import { onMount } from "svelte";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     import type { FullscreenPresentation, TitleWorkspaceLayout } from "$lib/titleWorkspace";
 
@@ -12,6 +14,11 @@
         { value: "immersive", label: "Ukryj pasek zada\u0144" },
         { value: "taskbar", label: "Poka\u017c pasek zada\u0144" },
     ];
+    let closeToTray = $state(false);
+
+    onMount(() => {
+        void loadCloseToTrayPreference();
+    });
 
     function setLayout(layout: TitleWorkspaceLayout) {
         titleWorkspace.setLayout(layout);
@@ -19,6 +26,23 @@
 
     function setFullscreenPresentation(presentation: FullscreenPresentation) {
         titleWorkspace.setFullscreenPresentation(presentation);
+    }
+
+    async function loadCloseToTrayPreference() {
+        try {
+            closeToTray = await invoke<boolean>("get_close_to_tray_enabled");
+        } catch {
+            closeToTray = false;
+        }
+    }
+
+    async function saveCloseToTrayPreference() {
+        const selected = closeToTray;
+        try {
+            await invoke("set_close_to_tray_enabled", { enabled: selected });
+        } catch {
+            closeToTray = !selected;
+        }
     }
 </script>
 
@@ -62,5 +86,17 @@
                 </button>
             {/each}
         </div>
+
+        <div class="my-3 border-t border-base-content/10"></div>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">Aplikacja</p>
+        <label class="flex items-center justify-between gap-3 text-sm">
+            <span>Zamykaj do zasobnika systemowego</span>
+            <input
+                type="checkbox"
+                class="toggle toggle-sm toggle-primary"
+                bind:checked={closeToTray}
+                onchange={() => { void saveCloseToTrayPreference(); }}
+            />
+        </label>
     </div>
 </details>
