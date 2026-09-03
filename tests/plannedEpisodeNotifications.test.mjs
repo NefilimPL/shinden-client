@@ -10,6 +10,7 @@ import {
   recordEpisodeSnapshot,
   reconcilePlannedTitles,
 } from "../src/lib/plannedEpisodeNotifications.ts";
+import { shouldRunPlannedCheck } from "../src/lib/plannedEpisodeNotificationRunner.ts";
 
 function planned(overrides = {}) {
   return {
@@ -146,5 +147,28 @@ test("accepts Polish release dates and marks visible notifications as read", () 
 });
 
 test("falls back to an empty state for malformed saved data", () => {
-  assert.deepEqual(loadPlannedNotificationState("not-json"), emptyPlannedNotificationState());
+    assert.deepEqual(loadPlannedNotificationState("not-json"), emptyPlannedNotificationState());
+});
+
+test("pauses planned episode checks while another background refresh is active", () => {
+  assert.equal(shouldRunPlannedCheck({
+    watchingRefreshRunning: true,
+    userListRefreshRunning: false,
+    userLoggedIn: true,
+  }), false);
+  assert.equal(shouldRunPlannedCheck({
+    watchingRefreshRunning: false,
+    userListRefreshRunning: true,
+    userLoggedIn: true,
+  }), false);
+  assert.equal(shouldRunPlannedCheck({
+    watchingRefreshRunning: false,
+    userListRefreshRunning: false,
+    userLoggedIn: false,
+  }), false);
+  assert.equal(shouldRunPlannedCheck({
+    watchingRefreshRunning: false,
+    userListRefreshRunning: false,
+    userLoggedIn: true,
+  }), true);
 });
