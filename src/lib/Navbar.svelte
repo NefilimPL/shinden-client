@@ -1,6 +1,7 @@
 <script lang="ts">
     import LoadingButton from "$lib/LoadingButton.svelte";
     import AccountButton from "$lib/AccountButton.svelte";
+    import NotificationBell from "$lib/NotificationBell.svelte";
     import UpdateButton from "$lib/logs/UpdateButton.svelte";
     import { onMount } from "svelte";
     import { globalStates } from "$lib/global.svelte";
@@ -62,6 +63,7 @@
             {#if globalStates.user.name}
                 <li><a class="btn btn-ghost btn-sm" href="/watchlist">Ogladam</a></li>
             {/if}
+            <li><NotificationBell /></li>
             <li><AccountButton/></li>
             <li><UpdateButton/></li>
         </ul>

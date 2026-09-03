@@ -5,6 +5,7 @@
     import { globalStates } from "$lib/global.svelte";
     import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
     import { startWatchlistBackgroundRefresh } from "$lib/watchlistRefresh";
+    import { plannedEpisodeNotificationStore } from "$lib/plannedEpisodeNotificationStore.svelte";
     import { page } from "$app/state";
     import TitleTabs from "$lib/TitleTabs.svelte";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
@@ -18,6 +19,7 @@
     $effect(() => {
         if (globalStates.user.name && !stopWatchlistBackgroundRefresh) {
             stopWatchlistBackgroundRefresh = startWatchlistBackgroundRefresh();
+            plannedEpisodeNotificationStore.start();
             if (!userAnimeListRefreshResumeStarted) {
                 userAnimeListRefreshResumeStarted = true;
                 void resumeUserAnimeListRefresh();
@@ -25,12 +27,14 @@
         } else if (!globalStates.user.name && stopWatchlistBackgroundRefresh) {
             stopWatchlistBackgroundRefresh();
             stopWatchlistBackgroundRefresh = null;
+            plannedEpisodeNotificationStore.stop();
             userAnimeListRefreshResumeStarted = false;
         }
     });
 
     onDestroy(() => {
         stopWatchlistBackgroundRefresh?.();
+        plannedEpisodeNotificationStore.stop();
     });
 </script>
 

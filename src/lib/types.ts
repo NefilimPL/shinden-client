@@ -113,6 +113,7 @@ export type UserAnimeListItem = Anime & {
     watchedEpisodesCount: number;
     totalEpisodes: number | null;
     releaseYear: number | null;
+    releaseDate: string | null;
     tags: string[];
     ageRating: string | null;
     active: boolean;
