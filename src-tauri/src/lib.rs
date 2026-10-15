@@ -14,6 +14,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod updater_commands;
+mod browser_verification;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct TrayPreferences {
@@ -456,6 +457,8 @@ pub fn run() {
             greet,
             write_log,
             test_connection,
+            browser_verification::open_shinden_verification,
+            browser_verification::complete_shinden_verification,
             search,
             get_search_filter_catalog,
             search_with_filters,

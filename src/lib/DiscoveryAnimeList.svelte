@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "./shindenInvoke.ts";
     import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, DiscoveryAnime } from "$lib/types";
     import { globalStates } from "$lib/global.svelte";

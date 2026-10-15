@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "$lib/shindenInvoke";
     import { goto } from "$app/navigation";
     import { onMount, untrack } from "svelte";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";

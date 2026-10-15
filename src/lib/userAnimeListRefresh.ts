@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./shindenInvoke.ts";
 import type { UserAnimeListRefreshSummary } from "$lib/types";
 
 let resumePromise: Promise<UserAnimeListRefreshSummary | null> | null = null;

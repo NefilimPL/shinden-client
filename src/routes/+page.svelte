@@ -1,7 +1,7 @@
 <script lang="ts">
     import { globalStates, LoadingState, params } from "$lib/global.svelte.js";
     import { onMount } from "svelte";
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "$lib/shindenInvoke";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import { goto } from "$app/navigation";
     import type {
@@ -36,14 +36,14 @@
     onMount(async () => {
         try {
             loadViewMode();
-            log(LogLevel.INFO, "Testing connection to http://shinden.pl");
+            log(LogLevel.INFO, "Testing connection to https://shinden.pl");
             await invoke("test_connection");
             globalStates.loadingState = LoadingState.OK;
-            log(LogLevel.SUCCESS, "Connection to http://shinden.pl established");
+            log(LogLevel.SUCCESS, "Connection to https://shinden.pl established");
             await loadPremieres();
         } catch (error) {
             globalStates.loadingState = LoadingState.ERROR;
-            log(LogLevel.ERROR, "Error connection to http://shinden.pl");
+            log(LogLevel.ERROR, `Nie udało się połączyć z https://shinden.pl: ${error}`);
         }
     });
 

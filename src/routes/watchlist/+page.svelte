@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "$lib/shindenInvoke";
     import { onMount, untrack } from "svelte";
     import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, WatchingAnime } from "$lib/types";

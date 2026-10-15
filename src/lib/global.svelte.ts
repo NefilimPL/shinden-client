@@ -1,5 +1,5 @@
 import type {AnimeWatchStatus, EpisodeProgress, User} from "$lib/types";
-import {invoke} from "@tauri-apps/api/core";
+import {invoke} from "./shindenInvoke.ts";
 
 import {
     defaultSearchFilters,

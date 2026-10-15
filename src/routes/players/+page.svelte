@@ -1,6 +1,6 @@
 <script lang="ts">
     import {onMount} from "svelte";
-    import {invoke} from "@tauri-apps/api/core";
+    import {invoke} from "$lib/shindenInvoke";
     import type {Player} from "$lib/types";
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {log, LogLevel} from "$lib/logs/logs.svelte";

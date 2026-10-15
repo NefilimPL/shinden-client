@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {invoke} from "@tauri-apps/api/core";
+    import {invoke} from "$lib/shindenInvoke";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {getUserData, globalStates, LoadingState} from "$lib/global.svelte";
 

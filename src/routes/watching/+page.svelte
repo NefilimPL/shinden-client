@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "$lib/shindenInvoke";
     import { globalStates, LoadingState, params } from "$lib/global.svelte";
     import { log, LogLevel } from "$lib/logs/logs.svelte";
     import * as dashjs from "dashjs";

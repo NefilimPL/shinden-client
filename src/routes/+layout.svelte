@@ -1,6 +1,7 @@
 <script lang="ts">
     import "../app.css";
     import Navbar from "$lib/Navbar.svelte";
+    import BrowserVerification from "$lib/BrowserVerification.svelte";
     import { onDestroy } from "svelte";
     import { globalStates } from "$lib/global.svelte";
     import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
@@ -43,6 +44,7 @@
 
 <div class="flex h-screen flex-col bg-base-100">
     <Navbar />
+    <BrowserVerification />
     <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
         <TitleTabs />
         {#if isTitleRoute && titleWorkspace.activeSession}
