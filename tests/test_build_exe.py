@@ -5,9 +5,33 @@ import os
 import sys
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from scripts import build_exe
+
+
+@contextmanager
+def windows_locked_file(path):
+    """Hold a real Windows handle that denies overwriting and deleting a file."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.CreateFileW(str(path), 0x80000000, 1, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        yield
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 class BuildExePlanTests(unittest.TestCase):
@@ -159,6 +183,45 @@ class BuildExePlanTests(unittest.TestCase):
             self.assertEqual(copied, [dist_dir / source.name])
             self.assertEqual((dist_dir / source.name).read_text(encoding="utf-8"), "new build")
             self.assertFalse((dist_dir / "ShindenClient-2.exe").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Requires Windows file sharing locks")
+    def test_clean_dist_explains_how_to_release_a_running_executable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dist_dir = root / "dist-exe"
+            dist_dir.mkdir()
+            executable = dist_dir / "ShindenClient.exe"
+            executable.write_bytes(b"running build")
+
+            with windows_locked_file(executable):
+                with self.assertRaises(build_exe.BuildError) as caught:
+                    build_exe.clean_dist(root, dist_dir)
+
+            self.assertIn(str(executable), str(caught.exception))
+            self.assertIn("zasobnik", str(caught.exception))
+            self.assertIn("--dist", str(caught.exception))
+            self.assertEqual(executable.read_bytes(), b"running build")
+
+    @unittest.skipUnless(os.name == "nt", "Requires Windows file sharing locks")
+    def test_copy_artifacts_explains_a_locked_destination_without_clean(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "build" / "ShindenClient.exe"
+            source.parent.mkdir()
+            source.write_bytes(b"new build")
+            dist_dir = root / "dist-exe"
+            dist_dir.mkdir()
+            executable = dist_dir / source.name
+            executable.write_bytes(b"running build")
+
+            with windows_locked_file(executable):
+                with self.assertRaises(build_exe.BuildError) as caught:
+                    build_exe.copy_artifacts([source], dist_dir)
+
+            self.assertIn(str(executable), str(caught.exception))
+            self.assertIn("zasobnik", str(caught.exception))
+            self.assertIn("--dist", str(caught.exception))
+            self.assertEqual(executable.read_bytes(), b"running build")
 
     def test_project_environment_points_logs_at_project_root(self):
         root = Path("C:/project")
