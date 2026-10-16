@@ -2,6 +2,7 @@
     import "../app.css";
     import Navbar from "$lib/Navbar.svelte";
     import BrowserVerification from "$lib/BrowserVerification.svelte";
+    import UpdateNotification from "$lib/UpdateNotification.svelte";
     import { onDestroy, onMount } from "svelte";
     import { invoke } from "$lib/shindenInvoke";
     import { imageProxy } from "$lib/imageProxy.svelte";
@@ -50,6 +51,7 @@
 <div class="flex h-screen flex-col bg-base-100">
     <Navbar />
     <BrowserVerification />
+    <UpdateNotification />
     <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
         <TitleTabs />
         {#if isTitleRoute && titleWorkspace.activeSession}
