@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
     import {getUserData, globalStates} from "$lib/global.svelte";
     import {onMount} from "svelte";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
@@ -32,7 +33,7 @@
                     <div class="w-8 rounded">
 
                             <img
-                                    src={globalStates.user.image_url}
+                                    src={shindenImageSrc(globalStates.user.image_url)}
                                     alt="Avatar"
                             />
                     </div>

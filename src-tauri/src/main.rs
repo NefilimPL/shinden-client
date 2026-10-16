@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Desktop builds use the application log instead of opening a console window.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
     shinden_client_rs_lib::run()

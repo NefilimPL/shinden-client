@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
     import type {
         AnimeDetails,
         AnimeRatingKey,
@@ -61,7 +62,7 @@
             {#if details.imageUrl}
                 <img
                     class="aspect-[2/3] w-full max-w-60 self-center rounded-lg object-cover shadow-lg"
-                    src={details.imageUrl}
+                    src={shindenImageSrc(details.imageUrl)}
                     alt={details.name}
                 />
             {/if}
@@ -182,7 +183,7 @@
                                 {#if series.imageUrl}
                                     <img
                                         class="aspect-[2/3] w-full object-cover"
-                                        src={series.imageUrl}
+                                        src={shindenImageSrc(series.imageUrl)}
                                         alt={series.name}
                                     />
                                 {/if}

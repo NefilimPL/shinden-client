@@ -1,13 +1,23 @@
 <script lang="ts">
     import { invoke } from "$lib/shindenInvoke";
-    import { subscribeBrowserVerification } from "$lib/browserVerification";
+    import { requireBrowserVerification, subscribeBrowserVerification } from "$lib/browserVerification";
+    import { listen } from "@tauri-apps/api/event";
     import { onMount } from "svelte";
 
     let required = $state(false);
     let opened = $state(false);
     let busy = $state(false);
     let errorMessage = $state("");
-    onMount(() => subscribeBrowserVerification(value => { required = value; }));
+    onMount(() => {
+        const unsubscribe = subscribeBrowserVerification(value => { required = value; });
+        let disposed = false;
+        let unlisten: (() => void) | undefined;
+        void listen("shinden-browser-verification-required", requireBrowserVerification).then(stop => {
+            if (disposed) stop();
+            else unlisten = stop;
+        });
+        return () => { disposed = true; unsubscribe(); unlisten?.(); };
+    });
 
     async function openVerification() {
         busy = true;

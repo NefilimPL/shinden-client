@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
     import {invoke} from "$lib/shindenInvoke";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {getUserData, globalStates, LoadingState} from "$lib/global.svelte";
@@ -69,7 +70,7 @@
             <div class="hero-content flex-col">
                 {#if globalStates.user.image_url}
                     <img
-                            src={globalStates.user.image_url}
+                            src={shindenImageSrc(globalStates.user.image_url)}
                             class="max-w-sm rounded-lg shadow-2xl"
                             alt="Avatar"
                     />

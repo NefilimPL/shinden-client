@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
     import { openAnimeTitle } from "$lib/titleNavigation";
     import { plannedEpisodeNotificationStore } from "$lib/plannedEpisodeNotificationStore.svelte";
 
@@ -66,7 +67,7 @@
                             type="button"
                             onclick={() => { void openNotification(notification.titleId, notification.animeName, notification.imageUrl, notification.seriesUrl); }}
                         >
-                            <img class="h-12 w-8 rounded object-cover" src={notification.imageUrl} alt="" />
+                            <img class="h-12 w-8 rounded object-cover" src={shindenImageSrc(notification.imageUrl)} alt="" />
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate text-sm font-medium">{notification.animeName}</span>
                                 <span class="block truncate text-xs opacity-70">

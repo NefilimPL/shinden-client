@@ -2,7 +2,9 @@
     import "../app.css";
     import Navbar from "$lib/Navbar.svelte";
     import BrowserVerification from "$lib/BrowserVerification.svelte";
-    import { onDestroy } from "svelte";
+    import { onDestroy, onMount } from "svelte";
+    import { invoke } from "$lib/shindenInvoke";
+    import { imageProxy } from "$lib/imageProxy.svelte";
     import { globalStates } from "$lib/global.svelte";
     import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
     import { startWatchlistBackgroundRefresh } from "$lib/watchlistRefresh";
@@ -12,6 +14,9 @@
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     let { children } = $props();
+    onMount(() => {
+        void invoke<string>("get_image_proxy_token").then(token => { imageProxy.token = token; });
+    });
     let stopWatchlistBackgroundRefresh: (() => void) | null = null;
     let userAnimeListRefreshResumeStarted = false;
     const titleRoutePaths = new Set(["/episodes", "/players", "/watching"]);
