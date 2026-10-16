@@ -4,12 +4,14 @@ const INTERACTIVE_DRAG_SELECTOR = [
     "input",
     "select",
     "textarea",
+    "summary",
+    "label",
     "[contenteditable='true']",
     "[role='button']",
     "[data-no-window-drag]"
 ].join(",");
 
-const TOUCH_DRAG_REGION_SELECTOR = "[data-tauri-drag-region]";
+const DRAG_REGION_SELECTOR = "[data-window-drag-region]";
 
 export type WindowDragPointerEvent = Pick<
     PointerEvent,
@@ -20,17 +22,17 @@ function hasClosest(target: EventTarget | null): target is Element {
     return typeof (target as { closest?: unknown } | null)?.closest === "function";
 }
 
-export function shouldStartTouchWindowDrag(event: WindowDragPointerEvent): boolean {
+export function shouldStartWindowDrag(event: WindowDragPointerEvent): boolean {
     if (
         event.defaultPrevented ||
-        event.pointerType !== "touch" ||
+        !["mouse", "touch", "pen"].includes(event.pointerType) ||
         event.button !== 0 ||
         !event.isPrimary
     ) {
         return false;
     }
 
-    if (!hasClosest(event.target) || !event.target.closest(TOUCH_DRAG_REGION_SELECTOR)) {
+    if (!hasClosest(event.target) || !event.target.closest(DRAG_REGION_SELECTOR)) {
         return false;
     }
 
@@ -39,4 +41,8 @@ export function shouldStartTouchWindowDrag(event: WindowDragPointerEvent): boole
     }
 
     return true;
+}
+
+export function shouldStartTouchWindowDrag(event: WindowDragPointerEvent): boolean {
+    return event.pointerType === "touch" && shouldStartWindowDrag(event);
 }

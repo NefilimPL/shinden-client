@@ -1,4 +1,5 @@
 import type { FullscreenPresentation } from "$lib/titleWorkspace";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 
 export type FullscreenWindow = {
     setFullscreen(fullscreen: boolean): Promise<void>;
@@ -9,6 +10,13 @@ export type TaskbarPresentationWindow = FullscreenWindow & {
     isMaximized(): Promise<boolean>;
     maximize(): Promise<void>;
     unmaximize(): Promise<void>;
+};
+
+export type DraggableWindow = TaskbarPresentationWindow & {
+    outerPosition(): Promise<{ x: number; y: number }>;
+    outerSize(): Promise<{ width: number; height: number }>;
+    setPosition(position: PhysicalPosition): Promise<void>;
+    startDragging(): Promise<void>;
 };
 
 export function createWindowFullscreenIntent() {
@@ -50,6 +58,42 @@ export function createWindowFullscreenIntent() {
         },
 
         toggleWindowFullscreen,
+
+        async startWindowDragging(
+            appWindow: DraggableWindow,
+            cursor: { x: number; y: number },
+            isPointerPressed: () => boolean = () => true,
+        ) {
+            const intentVersion = ++fullscreenIntentVersion;
+            intendedFullscreen = false;
+            const isCurrentDrag = () => intentVersion === fullscreenIntentVersion && isPointerPressed();
+            await queueWindowOperation(async () => {
+                if (!isCurrentDrag()) return;
+                const fullscreen = await appWindow.isFullscreen();
+                const maximized = await appWindow.isMaximized();
+                if (fullscreen || maximized) {
+                    const position = await appWindow.outerPosition();
+                    const size = await appWindow.outerSize();
+                    const horizontalAnchor = Math.max(0, Math.min(1, (cursor.x - position.x) / size.width));
+                    const verticalOffset = Math.max(0, cursor.y - position.y);
+
+                    if (!isCurrentDrag()) return;
+                    if (fullscreen) await appWindow.setFullscreen(false);
+                    // Fullscreen can restore a previously maximized window.
+                    const restoredMaximized = await appWindow.isMaximized();
+                    if (!isCurrentDrag()) return;
+                    if (restoredMaximized) await appWindow.unmaximize();
+                    const restored = await appWindow.outerSize();
+                    if (!isCurrentDrag()) return;
+                    await appWindow.setPosition(new PhysicalPosition(
+                        Math.round(cursor.x - restored.width * horizontalAnchor),
+                        Math.round(cursor.y - Math.min(verticalOffset, restored.height - 1)),
+                    ));
+                }
+                if (!isCurrentDrag()) return;
+                await appWindow.startDragging();
+            });
+        },
 
         async toggleWindowPresentation(
             appWindow: TaskbarPresentationWindow,

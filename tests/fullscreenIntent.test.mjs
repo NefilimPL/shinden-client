@@ -27,9 +27,93 @@ function createMockWindow({ fullscreen = false, maximized = false } = {}) {
         calls.push("unmaximize");
         maximized = false;
       },
+      async outerPosition() { return { x: 0, y: 0 }; },
+      async outerSize() {
+        return fullscreen || maximized
+          ? { width: 1920, height: 1080 }
+          : { width: 900, height: 700 };
+      },
+      async setPosition(position) { calls.push(`position:${position.x},${position.y}`); },
+      async startDragging() { calls.push("drag"); },
     },
   };
 }
+
+test("dragging an immersive window restores a smaller window under the cursor", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow({ fullscreen: true, maximized: true });
+  intent.setIntendedFullscreen(true);
+
+  await intent.startWindowDragging(mock.window, { x: 960, y: 30 });
+
+  assert.deepEqual(mock.calls, ["fullscreen:false", "unmaximize", "position:510,0", "drag"]);
+  assert.equal(intent.isWindowFullscreenIntended(), false);
+  assert.equal(await intent.restoreAfterElementFullscreenExit(mock.window, null), false);
+});
+
+test("dragging a maximized taskbar window restores its windowed size", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow({ maximized: true });
+
+  await intent.startWindowDragging(mock.window, { x: 960, y: 30 });
+
+  assert.deepEqual(mock.calls, ["unmaximize", "position:510,0", "drag"]);
+});
+
+test("dragging a normal window leaves its size and position to the operating system", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow();
+
+  await intent.startWindowDragging(mock.window, { x: 300, y: 30 });
+
+  assert.deepEqual(mock.calls, ["drag"]);
+});
+
+test("does not start a native drag if the pointer is released while restoring the window", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow({ maximized: true });
+  let pressed = true;
+  const unmaximize = mock.window.unmaximize;
+  mock.window.unmaximize = async () => {
+    await unmaximize();
+    pressed = false;
+  };
+
+  await intent.startWindowDragging(mock.window, { x: 960, y: 30 }, () => pressed);
+
+  assert.deepEqual(mock.calls, ["unmaximize"]);
+});
+
+test("restoring a drag preserves the cursor anchor on a monitor left of the primary monitor", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow({ maximized: true });
+  mock.window.outerPosition = async () => ({ x: -1920, y: -100 });
+
+  await intent.startWindowDragging(mock.window, { x: -960, y: -70 });
+
+  assert.deepEqual(mock.calls, ["unmaximize", "position:-1410,-100", "drag"]);
+});
+
+test("a drag cancels a player fullscreen restoration already checking the window", async () => {
+  const intent = createWindowFullscreenIntent();
+  const mock = createMockWindow({ maximized: true });
+  let resolveCheck;
+  const originalCheck = mock.window.isFullscreen;
+  mock.window.isFullscreen = () => {
+    mock.window.isFullscreen = originalCheck;
+    return new Promise((resolve) => { resolveCheck = resolve; });
+  };
+  intent.setIntendedFullscreen(true);
+  const restore = intent.restoreAfterElementFullscreenExit(mock.window, null);
+  await Promise.resolve();
+
+  const drag = intent.startWindowDragging(mock.window, { x: 960, y: 30 });
+  resolveCheck(false);
+
+  assert.equal(await restore, false);
+  await drag;
+  assert.deepEqual(mock.calls, ["unmaximize", "position:510,0", "drag"]);
+});
 
 test("toggling immersive presentation hides the taskbar with native fullscreen", async () => {
   const intent = createWindowFullscreenIntent();
