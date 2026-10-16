@@ -16,6 +16,8 @@ use tauri::Manager;
 mod updater_commands;
 mod browser_verification;
 mod shinden_images;
+#[cfg(windows)]
+mod window_frame;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct TrayPreferences {
@@ -439,6 +441,8 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             if let Some(main_window) = app.get_webview_window("main") {
+                #[cfg(windows)]
+                window_frame::install(main_window.hwnd()?.0 as _)?;
                 let window_for_events = main_window.clone();
                 main_window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
