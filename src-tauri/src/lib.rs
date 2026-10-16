@@ -14,6 +14,8 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod updater_commands;
+mod browser_verification;
+mod shinden_images;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct TrayPreferences {
@@ -401,12 +403,14 @@ pub fn run() {
     };
 
     if let Err(error) = tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("shinden-image", shinden_images::handle_request)
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .manage(backend)
         .manage(CloseToTrayState::default())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            app.manage(shinden_images::ImageProxyToken::new().map_err(std::io::Error::other)?);
             let preferences = load_tray_preferences(&app.handle());
             app.state::<CloseToTrayState>().replace(preferences)?;
 
@@ -456,6 +460,9 @@ pub fn run() {
             greet,
             write_log,
             test_connection,
+            shinden_images::get_image_proxy_token,
+            browser_verification::open_shinden_verification,
+            browser_verification::complete_shinden_verification,
             search,
             get_search_filter_catalog,
             search_with_filters,

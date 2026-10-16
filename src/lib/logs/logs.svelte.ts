@@ -1,5 +1,5 @@
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../shindenInvoke.ts";
 
 export enum LogLevel {
     ERROR,

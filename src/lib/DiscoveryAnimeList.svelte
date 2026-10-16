@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
+    import { invoke } from "./shindenInvoke.ts";
     import { openUrl } from "@tauri-apps/plugin-opener";
     import type { AnimeListViewMode, AnimeWatchStatus, DiscoveryAnime } from "$lib/types";
     import { globalStates } from "$lib/global.svelte";
@@ -104,7 +105,7 @@
                     {anime.rating || "-"}
                 </div>
                 <div>
-                    <img class="w-12 rounded-box object-fill shadow-sm" src={anime.image_url} alt="anime" />
+                    <img class="w-12 rounded-box object-fill shadow-sm" src={shindenImageSrc(anime.image_url)} alt="anime" />
                 </div>
                 <div class="list-col-grow flex-1 min-w-0">
                     <div class="truncate">{anime.name}</div>
@@ -180,7 +181,7 @@
                     >
                         <img
                             class="aspect-[2/3] w-full object-cover"
-                            src={anime.image_url}
+                            src={shindenImageSrc(anime.image_url)}
                             alt={anime.name}
                         />
                         <div class="flex min-h-28 flex-col gap-1 p-3">

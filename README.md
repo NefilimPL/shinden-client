@@ -16,6 +16,19 @@ Shinden Client to natywne rozwiązanie umożliwiające przeglądanie zasobów se
 - Zintegrowana konsola logów ułatwiająca diagnostykę.
 - Natywny odtwarzacz wspierający treści z cda.pl bez reklam.
 
+## Weryfikacja połączenia z Shinden
+
+Jeżeli Cloudflare zażąda weryfikacji, aplikacja wyświetli komunikat z przyciskiem
+**Zweryfikuj połączenie**. W otwartym oknie poczekaj na załadowanie strony Shinden
+i wykonaj ewentualną weryfikację. Wróć do aplikacji i wybierz
+**Weryfikacja zakończona — sprawdź połączenie**.
+
+Aplikacja przejmie potwierdzenie Cloudflare i sprawdzi połączenie przed odświeżeniem
+widoku. Sesja logowania aplikacji zostaje zachowana. Gdy potwierdzenie wygaśnie,
+można powtórzyć weryfikację. Zwykły błąd 403 bez żądania weryfikacji nie uruchamia
+tego procesu. Przejście weryfikacji w osobnej przeglądarce systemowej nie przenosi
+jej sesji do aplikacji.
+
 ## Kompatybilność
 
 | System operacyjny | Status wsparcia |

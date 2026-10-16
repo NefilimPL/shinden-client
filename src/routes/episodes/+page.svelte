@@ -2,7 +2,7 @@
     import {globalStates, LoadingState, params} from "$lib/global.svelte";
     import {onMount} from "svelte";
     import { openUrl } from "@tauri-apps/plugin-opener";
-    import {invoke} from "@tauri-apps/api/core";
+    import {invoke} from "$lib/shindenInvoke";
     import type {
         AnimeDetails,
         AnimeRatingKey,

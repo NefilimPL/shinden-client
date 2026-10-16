@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
     import { titleTabPresentation } from "$lib/titleTabPresentation";
     import { baseViewLabel } from "$lib/baseViewState";
     import { activateBaseTab, activateTitleTab, closeTitleTab } from "$lib/titleNavigation";
@@ -68,7 +69,7 @@
                     aria-label={`Otw\u00f3rz ${tab.name}`}
                     onclick={() => { void activateTitleTab(tab.titleId); }}
                 >
-                    <img class={`${titleWorkspace.layout === "vertical" ? "h-12 w-12" : "h-8 w-8"} shrink-0 rounded object-cover`} src={tab.imageUrl} alt={tab.name} />
+                    <img class={`${titleWorkspace.layout === "vertical" ? "h-12 w-12" : "h-8 w-8"} shrink-0 rounded object-cover`} src={shindenImageSrc(tab.imageUrl)} alt={tab.name} />
                     {#if presentation.showLabel}
                         <span class="truncate text-left text-xs">{tab.name}</span>
                     {/if}

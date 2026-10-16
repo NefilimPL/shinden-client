@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
+    import { invoke } from "$lib/shindenInvoke";
     import { goto } from "$app/navigation";
     import { onMount, untrack } from "svelte";
     import AnimeListViewToggle from "$lib/AnimeListViewToggle.svelte";
@@ -548,7 +549,7 @@
                                     {anime.rating || "-"}
                                 </div>
                                 <div>
-                                    <img class="w-12 rounded-box object-fill shadow-sm" src={anime.image_url} alt={anime.name} />
+                                    <img class="w-12 rounded-box object-fill shadow-sm" src={shindenImageSrc(anime.image_url)} alt={anime.name} />
                                 </div>
                                 <div class="list-col-grow min-w-0 flex-1">
                                     <div class="truncate">{anime.name}</div>
@@ -602,7 +603,7 @@
                                     >
                                         <img
                                             class="aspect-[2/3] w-full object-cover"
-                                            src={anime.image_url}
+                                            src={shindenImageSrc(anime.image_url)}
                                             alt={anime.name}
                                         />
                                         <div class="flex min-h-32 flex-col gap-1 p-3">

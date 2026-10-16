@@ -1,5 +1,6 @@
 <script lang="ts">
-    import {invoke} from "@tauri-apps/api/core";
+    import { shindenImageSrc } from "$lib/shindenImageSrc";
+    import {invoke} from "$lib/shindenInvoke";
     import {onMount, untrack} from "svelte";
     import type {AnimeListViewMode, AnimeWatchStatus, SearchAnime, SearchAnimePage} from "$lib/types";
     import {log, LogLevel} from "$lib/logs/logs.svelte";
@@ -228,7 +229,7 @@
             {#each result as anime}
                 <li class="list-row flex items-center justify-between">
                     <div class="text-4xl font-thin opacity-30 tabular-nums">{anime.rating}</div>
-                    <div class=""><img class="w-12 rounded-box object-fill shadow-sm" src={anime.image_url} alt="anime"/></div>
+                    <div class=""><img class="w-12 rounded-box object-fill shadow-sm" src={shindenImageSrc(anime.image_url)} alt="anime"/></div>
                     <div class="list-col-grow flex-1">
                         <div>{anime.name}</div>
                         <div class="text-xs uppercase font-semibold opacity-60">{anime.anime_type}</div>
@@ -283,7 +284,7 @@
                             >
                                 <img
                                     class="aspect-[2/3] w-full object-cover"
-                                    src={anime.image_url}
+                                    src={shindenImageSrc(anime.image_url)}
                                     alt={anime.name}
                                 />
                                 <div class="flex min-h-28 flex-col gap-1 p-3">

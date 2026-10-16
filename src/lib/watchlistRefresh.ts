@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./shindenInvoke.ts";
 
 export const watchlistSettingsStorageKey = "shinden-watchlist-settings";
 export const watchlistAutoRefreshMs = 15 * 60 * 1000;

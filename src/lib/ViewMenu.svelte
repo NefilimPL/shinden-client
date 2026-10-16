@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "./shindenInvoke.ts";
     import { onMount } from "svelte";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
     import type { FullscreenPresentation, TitleWorkspaceLayout } from "$lib/titleWorkspace";

@@ -1,5 +1,6 @@
 import type {AnimeWatchStatus, EpisodeProgress, User} from "$lib/types";
-import {invoke} from "@tauri-apps/api/core";
+import {invoke} from "./shindenInvoke.ts";
+import {normalizeShindenImageUrl} from "./shindenImages.ts";
 
 import {
     defaultSearchFilters,
@@ -92,14 +93,12 @@ export function restoreTitleNavigationContext(context: TitleNavigationContext) {
     params.currentEpisodeIndex = context.currentEpisodeIndex;
 }
 export async function getUserData(): Promise<boolean> {
-    const username = await invoke("get_user_name");
-    const user_profile_image_url = await invoke("get_user_profile_image");
+    const username = await invoke<string | null>("get_user_name");
+    const user_profile_image_url = await invoke<string | null>("get_user_profile_image");
 
-    const is_user_img_valid = new URL(user_profile_image_url as string).host == "shinden.pl";
-
-    if(user_profile_image_url && username) {
-        globalStates.user.name = username as string;
-        globalStates.user.image_url = is_user_img_valid ? user_profile_image_url as string : "";
+    if(username) {
+        globalStates.user.name = username;
+        globalStates.user.image_url = normalizeShindenImageUrl(user_profile_image_url);
         return true;
     }
 

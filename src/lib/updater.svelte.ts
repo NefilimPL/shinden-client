@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./shindenInvoke.ts";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { log, LogLevel } from "$lib/logs/logs.svelte";
