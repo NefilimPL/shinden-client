@@ -125,20 +125,28 @@ test("a later negative result or error clears previously detected update details
   }
 });
 
-test("the startup dialog renders the detected release notes safely and links to updates", async () => {
-  await withUpdater(async (store, native, buttonHtml, available, notificationHtml) => {
-    native.result = available("- Poprawiono odtwarzanie\n<script>alert('test')</script>");
-    await store.checkUpdateOnStartup();
-    const html = notificationHtml();
-    assert.match(html, /4\.0\.5/);
-    assert.match(html, /4\.0\.3/);
-    assert.match(html, /- Poprawiono odtwarzanie/);
-    assert.doesNotMatch(html, /<script>/);
-    assert.match(html, /href="\/info"/);
-    store.dismissStartupUpdate();
-    assert.doesNotMatch(notificationHtml(), /- Poprawiono odtwarzanie/);
+for (const script of [
+  "<script>alert('test')</script>",
+  "<SCRIPT>alert('test')</SCRIPT>",
+  '<ScRiPt src="https://example.com/test.js"></ScRiPt>',
+  "<script\n type=module>alert('test')</script>",
+]) {
+  test(`the startup dialog escapes ${JSON.stringify(script)} and links to updates`, async () => {
+    await withUpdater(async (store, native, buttonHtml, available, notificationHtml) => {
+      native.result = available(`- Poprawiono odtwarzanie\n${script}`);
+      await store.checkUpdateOnStartup();
+      const html = notificationHtml();
+      assert.match(html, /4\.0\.5/);
+      assert.match(html, /4\.0\.3/);
+      assert.match(html, /- Poprawiono odtwarzanie/);
+      assert.doesNotMatch(html, /<script\b/i);
+      assert.ok(html.includes(script.replaceAll("&", "&amp;").replaceAll("<", "&lt;")), "notes must remain visible as escaped text");
+      assert.match(html, /href="\/info"/);
+      store.dismissStartupUpdate();
+      assert.doesNotMatch(notificationHtml(), /- Poprawiono odtwarzanie/);
+    });
   });
-});
+}
 
 test("a release without notes still opens the update notification with a fallback", async () => {
   await withUpdater(async (store, native, buttonHtml, available, notificationHtml) => {
