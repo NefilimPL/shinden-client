@@ -22,10 +22,18 @@ export enum UpdateState {
     UNKNOWN
 }
 
+export interface AvailableUpdate {
+    version: string;
+    currentVersion: string;
+    notes: string;
+}
+
 export const status: {
     updateState: UpdateState;
     statusMessage: string;
     errorMessage: string | null;
+    availableUpdate: AvailableUpdate | null;
+    startupUpdate: AvailableUpdate | null;
     availableVersions: UpdateReleaseVersion[];
     selectedVersion: UpdateReleaseVersion | null;
     versionsLoading: boolean;
@@ -36,6 +44,8 @@ export const status: {
     updateState: UpdateState.UNKNOWN,
     statusMessage: getStatusMessage(UpdateState.UNKNOWN),
     errorMessage: null,
+    availableUpdate: null,
+    startupUpdate: null,
     availableVersions: [],
     selectedVersion: null,
     versionsLoading: false,
@@ -45,6 +55,7 @@ export const status: {
 });
 
 let progressUnlisten: Promise<UnlistenFn> | null = null;
+let startupCheck: Promise<void> | null = null;
 
 export function getStatusMessage(state: UpdateState) {
     switch (state) {
@@ -166,11 +177,18 @@ export function selectUpdateVersion(tagName: string) {
 export async function checkUpdate(): Promise<boolean> {
     clearProgress();
     status.errorMessage = null;
+    status.availableUpdate = null;
     await setUpdateState(UpdateState.CHECKING);
 
+    let update: Awaited<ReturnType<typeof check>> = null;
     try {
-        const update = await check();
+        update = await check({ timeout: 15_000 });
         if (update) {
+            status.availableUpdate = {
+                version: update.version,
+                currentVersion: update.currentVersion,
+                notes: update.body?.trim() ?? ""
+            };
             await setUpdateState(UpdateState.AVAILABLE, `Dostępna jest wersja ${update.version}`);
             return true;
         }
@@ -182,7 +200,29 @@ export async function checkUpdate(): Promise<boolean> {
         status.errorMessage = message;
         await setUpdateState(UpdateState.ERROR);
         throw error;
+    } finally {
+        // Installation uses the selected release manifest, so this native resource is no longer needed.
+        await update?.close().catch((error) => {
+            log(LogLevel.ERROR, `Nie udało się zwolnić zasobu aktualizacji: ${errorToMessage(error)}`);
+        });
     }
+}
+
+export function checkUpdateOnStartup(): Promise<void> {
+    startupCheck ??= (async () => {
+        try {
+            if (await checkUpdate()) {
+                status.startupUpdate = status.availableUpdate;
+            }
+        } catch (error) {
+            log(LogLevel.ERROR, `Nie udało się sprawdzić aktualizacji: ${errorToMessage(error)}`);
+        }
+    })();
+    return startupCheck;
+}
+
+export function dismissStartupUpdate() {
+    status.startupUpdate = null;
 }
 
 export async function getAndinstallUpdate(selectedVersion = status.selectedVersion) {
