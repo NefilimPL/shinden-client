@@ -15,7 +15,7 @@ import {
     type PlannedTitle,
 } from "$lib/plannedEpisodeNotifications";
 import { shouldRunPlannedCheck } from "$lib/plannedEpisodeNotificationRunner";
-import type { EpisodeProgress, UserAnimeListRefreshStatus, UserAnimeListsPayload } from "$lib/types";
+import type { AnimeDetails, EpisodeProgress, UserAnimeListRefreshStatus, UserAnimeListsPayload } from "$lib/types";
 import type { WatchingCacheRefreshStatus } from "$lib/watchlistRefresh";
 
 const userListRefreshIntervalMs = 30 * 60_000;
@@ -130,10 +130,34 @@ async function tick() {
                 totalEpisodes: null,
                 titleName: title.name,
             });
-            if (active) {
-                state = recordEpisodeSnapshot(state, title, firstUnwatchedEpisode(episodes), Date.now());
-                persist();
+            if (!active) {
+                return;
             }
+            const episode = firstEpisode(episodes);
+            const snapshot = recordEpisodeSnapshot(state, title, episode, Date.now());
+            if (snapshot.notifications !== state.notifications) {
+                // The user-list cache can retain "plan" after a status change, including
+                // changes made outside the app. Verify only when an alert is about to be created.
+                const details = await invoke<AnimeDetails>("get_anime_details", { url: title.url });
+                if (!active) {
+                    return;
+                }
+                if (!details.userStatusLoaded || details.titleId !== title.titleId) {
+                    throw new Error("Could not verify the current planned title status");
+                }
+                if (details.watchStatus !== "plan") {
+                    plannedTitles = plannedTitles.map((candidate) => candidate.titleId === title.titleId
+                        ? { ...candidate, watchStatus: details.watchStatus }
+                        : candidate);
+                    state = reconcilePlannedTitles(state, plannedTitles, Date.now());
+                    persist();
+                    return;
+                }
+            }
+            // Use the current state: refreshing the list may have removed this title
+            // while either native request was in flight.
+            state = recordEpisodeSnapshot(state, title, episode, Date.now());
+            persist();
         } catch {
             if (active) {
                 state = recordCheckFailure(state, title.titleId, Date.now());
@@ -168,8 +192,9 @@ async function refreshTitles() {
     }
 }
 
-function firstUnwatchedEpisode(episodes: EpisodeProgress[]): PlannedEpisode | null {
-    const episode = episodes.find((candidate) => !candidate.watched);
+function firstEpisode(episodes: EpisodeProgress[]): PlannedEpisode | null {
+    const episode = episodes.find((candidate) => candidate.episodeNo === 1)
+        ?? episodes.find((candidate) => candidate.episodeNo > 1);
     if (!episode) {
         return null;
     }

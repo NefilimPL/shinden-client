@@ -95,7 +95,9 @@ export function reconcilePlannedTitles(
 
         entries[title.titleId] = {
             lastEpisodeLink: existing?.lastEpisodeLink ?? null,
-            initialized: existing?.initialized ?? false,
+            // A future release date establishes that the premiere is still ahead,
+            // even though episode requests are deferred until that day.
+            initialized: existing?.initialized || (releaseDayMs !== null && releaseDayMs > nowMs),
             nextCheckAtMs,
             failures: existing?.failures ?? 0,
         };
@@ -123,7 +125,7 @@ export function nextCheckableTitle(
         const index = (cursorIndex + offset) % plannedTitles.length;
         const title = plannedTitles[index];
         const entry = state.entries[title.titleId];
-        if (!entry || entry.nextCheckAtMs > nowMs) {
+        if (!entry || entry.lastEpisodeLink !== null || entry.nextCheckAtMs > nowMs) {
             continue;
         }
 
@@ -140,17 +142,17 @@ export function recordEpisodeSnapshot(
     episode: PlannedEpisode | null,
     nowMs: number,
 ): PlannedNotificationState {
-    const entry = state.entries[title.titleId] ?? {
-        lastEpisodeLink: null,
-        initialized: false,
-        nextCheckAtMs: nowMs,
-        failures: 0,
-    };
+    const entry = state.entries[title.titleId];
+    if (!title.active || title.watchStatus !== "plan" || !entry || entry.lastEpisodeLink !== null) {
+        return state;
+    }
     const previousEpisodeLink = entry.lastEpisodeLink;
     const nextEpisodeLink = episode?.link ?? null;
     const isNewEpisode = entry.initialized
         && nextEpisodeLink !== null
-        && nextEpisodeLink !== previousEpisodeLink;
+        && previousEpisodeLink === null
+        && episode?.episodeNo === 1
+        && !episode.watched;
     const notifications = isNewEpisode && episode
         ? [{
             id: `${title.titleId}:${episode.link}`,
