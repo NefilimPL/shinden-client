@@ -715,10 +715,22 @@ def copy_artifacts(artifacts: Iterable[Path], dist_dir: Path) -> list[Path]:
 
     for artifact in artifacts:
         destination = dist_dir / artifact.name
-        shutil.copy2(artifact, destination)
+        try:
+            shutil.copy2(artifact, destination)
+        except PermissionError as error:
+            raise artifact_access_error(destination) from error
         copied.append(destination)
 
     return copied
+
+
+def artifact_access_error(path: Path) -> BuildError:
+    return BuildError(
+        f"Nie można usunąć lub nadpisać pliku: {path}. "
+        "Zamknij Shinden Client, również w zasobniku systemowym, i uruchom generator ponownie. "
+        "Możesz też użyć innego katalogu: generator_exe.bat --clean --dist dist-exe-new. "
+        "Jeśli plik nie jest używany, sprawdź uprawnienia do katalogu."
+    )
 
 
 def clean_dist(root: Path, dist_dir: Path) -> None:
@@ -727,7 +739,10 @@ def clean_dist(root: Path, dist_dir: Path) -> None:
     if resolved_dist == resolved_root or resolved_root not in resolved_dist.parents:
         raise BuildError(f"Refusing to clean a directory outside the project: {resolved_dist}")
     if dist_dir.exists():
-        shutil.rmtree(dist_dir)
+        try:
+            shutil.rmtree(dist_dir)
+        except PermissionError as error:
+            raise artifact_access_error(Path(error.filename) if error.filename else dist_dir) from error
 
 
 def write_log(log_file, message: str) -> None:
@@ -909,5 +924,5 @@ if __name__ == "__main__":
             write_log(log_file, f"Build failed: {error}")
             log_file.write(traceback.format_exc())
             log_file.flush()
-        print(f"Build failed. See {log_dir / 'build-exe.log'}", file=sys.stderr)
+        print(f"Build failed: {error}\nSee {log_dir / 'build-exe.log'}", file=sys.stderr)
         raise SystemExit(1)
