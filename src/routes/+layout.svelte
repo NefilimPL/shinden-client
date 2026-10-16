@@ -54,7 +54,9 @@
         <TitleTabs />
         {#if isTitleRoute && titleWorkspace.activeSession}
             <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                {#key `${titleWorkspace.activeTitleId}:${titleWorkspace.activeSession.view}`}
+                <!-- SvelteKit mounts route changes; only title switches need a forced remount.
+                     The session view is saved before goto(), while children still holds the old route. -->
+                {#key titleWorkspace.activeTitleId}
                     {@render children()}
                 {/key}
             </div>
