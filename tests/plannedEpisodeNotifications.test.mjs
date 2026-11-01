@@ -78,6 +78,24 @@ test("first snapshot establishes a baseline without creating a notification", ()
   assert.equal(state.entries[1].lastEpisodeLink, "/episode/1");
 });
 
+test("restoring a previously saved empty premiere link resumes monitoring", () => {
+  const title = planned();
+  const previous = {
+    entries: { 1: { lastEpisodeLink: "", initialized: true, nextCheckAtMs: 0, failures: 0 } },
+    cursor: 1,
+    notifications: [{
+      id: "1:", titleId: 1, animeName: "Alpha", seriesUrl: title.url, imageUrl: title.image_url,
+      episodeLink: "", episodeTitle: "Odcinek 1", episodeNo: 1, detectedAtMs: 0, read: false,
+    }],
+  };
+  const state = reconcilePlannedTitles(previous, [title], 1);
+  assert.equal(nextCheckableTitle(state, [title], 1), title);
+  assert.deepEqual(state.notifications, []);
+  const next = recordEpisodeSnapshot(state, title, episode("/episode/1"), 2);
+  assert.equal(next.notifications.length, 1);
+  assert.equal(next.notifications[0].episodeLink, "/episode/1");
+});
+
 test("the first available episode creates one unread premiere notification", () => {
   let state = recordEpisodeSnapshot(
     reconcilePlannedTitles(emptyPlannedNotificationState(), [planned()], 1),

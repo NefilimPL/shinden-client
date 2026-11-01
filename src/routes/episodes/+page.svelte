@@ -20,6 +20,7 @@
     import { cachedEpisodeAvailabilityForFilter, type CachedEpisodeAvailability } from "$lib/cachedEpisodeAvailability";
 
     let episodes: EpisodeProgress[] = $state([]);
+    let episodesError: string | null = $state(null);
     let watchedUpdateInProgress: number | null = $state(null);
     let details: AnimeDetails | null = $state(null);
     let detailsLoading = $state(false);
@@ -33,6 +34,10 @@
     });
 
     async function loadEpisodes() {
+        episodes = [];
+        params.episodeProgress = [];
+        episodesError = null;
+        const detailsRequest = loadAnimeDetails();
         try {
             globalStates.loadingState = LoadingState.LOADING;
             log(LogLevel.INFO, "Loading episodes");
@@ -49,12 +54,13 @@
             });
             params.episodeProgress = episodes;
             void loadEpisodeAvailability();
-            await loadAnimeDetails();
-            globalStates.loadingState = LoadingState.OK;
             log(LogLevel.SUCCESS, "Loaded episodes successfully");
         } catch (e) {
-            globalStates.loadingState = LoadingState.ERROR;
+            episodesError = String(e);
             log(LogLevel.ERROR, `Error getting episodes: ${e}`);
+        } finally {
+            await detailsRequest;
+            globalStates.loadingState = LoadingState.OK;
         }
     }
 
@@ -274,7 +280,15 @@
             />
         {/if}
 
-    {#if episodes.length > 0}
+    {#if episodesError}
+        <div class="alert alert-error" role="alert">
+            <div>
+                <p>Nie udało się pobrać odcinków.</p>
+                <p class="text-sm">{episodesError}</p>
+            </div>
+            <button class="btn btn-sm" onclick={() => { void loadEpisodes(); }}>Spróbuj ponownie</button>
+        </div>
+    {:else if episodes.length > 0}
         <ul class="list bg-base-100 rounded-box shadow-md">
 
             <li class="p-4 pb-2 text-xs opacity-60 tracking-wide">Lista odcinków:</li>
@@ -286,7 +300,7 @@
             </li>
 
             {#each episodes as episode, i}
-                {@const availabilityState = cachedEpisodeAvailabilityForFilter(episodeAvailability, episode.link, episode.watched, loadWatchlistRefreshFilter())}
+                {@const availabilityState = !episode.link ? "unavailable" : cachedEpisodeAvailabilityForFilter(episodeAvailability, episode.link, episode.watched, loadWatchlistRefreshFilter())}
                 <li class="list-row flex items-center justify-between">
                     <div class="text-4xl font-thin opacity-30 tabular-nums w-fit min-w-16 text-center">{i+1}</div>
                     <div class="list-col-grow flex-1">
@@ -314,7 +328,7 @@
                             {episode.watched ? "Odznacz" : "Oznacz"}
                         </button>
                     </div>
-                    <button class="btn btn-square btn-ghost" aria-label="play" onclick={async() => { await handleButton(episode, i) }}>
+                    <button class="btn btn-square btn-ghost" aria-label="play" disabled={!episode.link} onclick={async() => { await handleButton(episode, i) }}>
                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                     </button>
                 </li>

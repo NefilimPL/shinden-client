@@ -195,7 +195,7 @@ async function refreshTitles() {
 function firstEpisode(episodes: EpisodeProgress[]): PlannedEpisode | null {
     const episode = episodes.find((candidate) => candidate.episodeNo === 1)
         ?? episodes.find((candidate) => candidate.episodeNo > 1);
-    if (!episode) {
+    if (!episode?.link.trim()) {
         return null;
     }
     return {

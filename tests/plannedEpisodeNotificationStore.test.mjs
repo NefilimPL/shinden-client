@@ -138,3 +138,21 @@ test("a prologue episode zero does not consume the later episode one premiere", 
     assert.equal(store.state.notifications[0].episodeNo, 1);
   });
 });
+
+test("a premiere row without a playback link does not create an alert", async () => {
+  await withStore({ episodes: [
+    { title: "First title", link: "", episodeNo: 1, watched: false },
+  ] }, (store) => {
+    assert.deepEqual(store.state.notifications, []);
+    assert.equal(store.state.entries[1].lastEpisodeLink, null);
+  });
+});
+
+test("an unavailable premiere does not consume the later playable first episode", async () => {
+  await withStore({ initialEpisodes: [
+    { title: "First title", link: "", episodeNo: 1, watched: false },
+  ] }, (store) => {
+    assert.equal(store.state.notifications.length, 1);
+    assert.equal(store.state.notifications[0].episodeLink, "/episode/1");
+  });
+});
