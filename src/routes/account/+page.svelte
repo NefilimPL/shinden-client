@@ -8,21 +8,37 @@
 
     console.log(data);
 
-    let email: string = $state("");
-    let password: string = $state("");
-    async function handleLogin(event: Event) {
-        event.preventDefault();
-
+    let loginOpened = $state(false);
+    let loginBusy = $state(false);
+    let loginError = $state("");
+    async function openLogin() {
+        loginBusy = true;
+        loginError = "";
+        try {
+            await invoke("open_shinden_login");
+            loginOpened = true;
+        } catch (error) {
+            loginError = String(error);
+        } finally {
+            loginBusy = false;
+        }
+    }
+    async function handleLogin() {
+        loginBusy = true;
+        loginError = "";
         try {
             log(LogLevel.INFO, "Trying to log in");
             globalStates.loadingState = LoadingState.LOADING;
-            await invoke("login", {username: email, password: password});
+            await invoke("complete_shinden_login");
             await getUserData();
             globalStates.loadingState = LoadingState.OK;
             log(LogLevel.SUCCESS, `Successfully logged in`);
         } catch (error) {
+            loginError = String(error);
             globalStates.loadingState = LoadingState.ERROR;
             log(LogLevel.ERROR, `Could not log in: ${error}`);
+        } finally {
+            loginBusy = false;
         }
     }
 
@@ -55,15 +71,16 @@
                 <p>Nie masz konta? <a class="link" target="_blank" href="https://shinden.pl/user/0/register">Zarejestruj się</a></p>
             </div>
             <div class="card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl">
-                <form class="card-body" onsubmit={handleLogin}>
-                    <fieldset class="fieldset">
-                        <label for="email" class="label">Email</label>
-                        <input id="email" type="email" class="input w-full" placeholder="Email" required bind:value={email} />
-                        <label for="password" class="label">Hasło</label>
-                        <input id="password" type="password" class="input w-full" placeholder="Hasło" required bind:value={password} />
-                        <button class="btn btn-neutral mt-4">Zaloguj się</button>
-                    </fieldset>
-                </form>
+                <div class="card-body gap-4">
+                    <p>Zaloguj się loginem lub e-mailem i hasłem w oknie Shinden. Następnie wróć tutaj i potwierdź logowanie.</p>
+                    <button class="btn btn-neutral" disabled={loginBusy} onclick={openLogin}>
+                        {loginOpened ? "Otwórz ponownie okno Shinden" : "Zaloguj w oknie Shinden"}
+                    </button>
+                    {#if loginOpened}
+                        <button class="btn btn-primary" disabled={loginBusy} onclick={handleLogin}>Zalogowano — sprawdź konto</button>
+                    {/if}
+                    {#if loginError}<p class="text-error" role="alert">{loginError}</p>{/if}
+                </div>
             </div>
         </div>
         {:else}

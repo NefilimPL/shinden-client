@@ -467,6 +467,8 @@ pub fn run() {
             shinden_images::get_image_proxy_token,
             browser_verification::open_shinden_verification,
             browser_verification::complete_shinden_verification,
+            browser_verification::open_shinden_login,
+            browser_verification::complete_shinden_login,
             search,
             get_search_filter_catalog,
             search_with_filters,

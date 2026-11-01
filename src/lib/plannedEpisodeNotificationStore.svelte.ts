@@ -133,7 +133,12 @@ async function tick() {
             if (!active) {
                 return;
             }
-            const episode = firstEpisode(episodes);
+            let episode = firstEpisode(episodes);
+            if (episode?.episodeNo === 1 && !episode.watched) {
+                const players = await invoke<unknown[]>("get_players", { url: episode.link });
+                if (!active) return;
+                if (players.length === 0) episode = null;
+            }
             const snapshot = recordEpisodeSnapshot(state, title, episode, Date.now());
             if (snapshot.notifications !== state.notifications) {
                 // The user-list cache can retain "plan" after a status change, including

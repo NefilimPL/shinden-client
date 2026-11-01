@@ -29,6 +29,12 @@ można powtórzyć weryfikację. Zwykły błąd 403 bez żądania weryfikacji ni
 tego procesu. Przejście weryfikacji w osobnej przeglądarce systemowej nie przenosi
 jej sesji do aplikacji.
 
+## Logowanie
+
+Na ekranie konta wybierz **Zaloguj w oknie Shinden**. Zaloguj się loginem lub e-mailem
+i hasłem na oficjalnej stronie w otwartym oknie, następnie wróć do aplikacji i wybierz
+**Zalogowano — sprawdź konto**. Aplikacja sprawdzi sesję przed wyświetleniem nazwy konta.
+
 ## Kompatybilność
 
 | System operacyjny | Status wsparcia |

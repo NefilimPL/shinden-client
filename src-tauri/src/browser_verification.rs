@@ -5,6 +5,74 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const WINDOW_LABEL: &str = "shinden-verification";
 const SHINDEN_URL: &str = "https://shinden.pl/";
+const LOGIN_WINDOW_LABEL: &str = "shinden-login";
+
+#[tauri::command]
+pub async fn open_shinden_login(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(window) = app.get_webview_window(LOGIN_WINDOW_LABEL) {
+            window.show().map_err(|error| error.to_string())?;
+            return window.set_focus().map_err(|error| error.to_string());
+        }
+        WebviewWindowBuilder::new(
+            &app,
+            LOGIN_WINDOW_LABEL,
+            WebviewUrl::External("https://shinden.pl/main/login".parse().unwrap()),
+        )
+        .title("Shinden — logowanie")
+        .inner_size(1000.0, 750.0)
+        .on_navigation(is_verification_url)
+        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+        .build()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn complete_shinden_login(
+    app: AppHandle,
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(LOGIN_WINDOW_LABEL)
+        .ok_or("Otwórz okno Shinden i zaloguj się.")?;
+    let browser = window.clone();
+    let (agent, cookies) = tauri::async_runtime::spawn_blocking(move || {
+        if !is_verification_url(&browser.url().map_err(|error| error.to_string())?) {
+            return Err("Okno logowania nie wyświetla strony Shinden.".to_string());
+        }
+        let (sender, receiver) = mpsc::sync_channel(1);
+        browser
+            .eval_with_callback("navigator.userAgent", move |value| {
+                let _ = sender.try_send(value);
+            })
+            .map_err(|error| error.to_string())?;
+        let value = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|_| "Nie udało się odczytać danych okna logowania.")?;
+        let agent: String =
+            serde_json::from_str(&value).map_err(|_| "Nieprawidłowe dane okna logowania.")?;
+        let cookies: Vec<String> = browser
+            .cookies_for_url(SHINDEN_URL.parse().unwrap())
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .filter(|cookie| !cookie.value().is_empty())
+            .map(|cookie| cookie.to_string())
+            .collect();
+        Ok::<_, String>((agent, cookies))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    state.import_browser_session(&agent, &cookies)?;
+    if state.get_user_name().await?.is_none() {
+        return Err("Dokończ logowanie w oknie Shinden i spróbuj ponownie.".into());
+    }
+    let _ = window.close();
+    Ok(())
+}
 
 fn is_verification_url(url: &tauri::Url) -> bool {
     url.scheme() == "https"

@@ -36,6 +36,9 @@ async function withStore(options, run) {
         currentTitle: "", lastFinishedAtMs: null, lastError: null,
       };
       case "get_episodes_with_progress": return episodes;
+      case "get_players":
+        if (options.playersError) throw new Error("Login required");
+        return options.players ?? [{ player: "CDA", online_id: "1", max_res: "1080p", lang_audio: "JP", lang_subs: "PL" }];
       case "get_anime_details":
         if (options.statusError) throw new Error("offline");
         return {
@@ -154,5 +157,20 @@ test("an unavailable premiere does not consume the later playable first episode"
   ] }, (store) => {
     assert.equal(store.state.notifications.length, 1);
     assert.equal(store.state.notifications[0].episodeLink, "/episode/1");
+  });
+});
+
+test("a precreated first-episode page without players cannot trigger a premiere", async () => {
+  await withStore({ players: [] }, (store) => {
+    assert.deepEqual(store.state.notifications, []);
+    assert.equal(store.state.entries[1].lastEpisodeLink, null);
+  });
+});
+
+test("a login error while checking premiere players keeps the premiere pending", async () => {
+  await withStore({ playersError: true }, (store) => {
+    assert.deepEqual(store.state.notifications, []);
+    assert.equal(store.state.entries[1].lastEpisodeLink, null);
+    assert.equal(store.state.entries[1].failures, 1);
   });
 });
