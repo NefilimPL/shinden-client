@@ -4166,6 +4166,7 @@ name = "shinden-pl-api"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "cookie_store 0.21.1",
  "dirs",
  "futures-util",

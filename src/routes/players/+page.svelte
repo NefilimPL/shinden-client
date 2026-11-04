@@ -15,6 +15,7 @@
     import Unknown from "$lib/badges/Unknown.svelte";
 
     let players: Player[] = $state([]);
+    let loadError = $state("");
     let grouped: Record<string, Player[]> = $state({});
 
     let safe: string[] = $state([]);
@@ -67,6 +68,7 @@
            }
 
        } catch (e) {
+           loadError = String(e);
            globalStates.loadingState = LoadingState.ERROR;
            log(LogLevel.ERROR, `Error loading players: ${e}`);
        }
@@ -108,4 +110,9 @@
     {:else}
     <Empty />
     {/if}
+{:else if globalStates.loadingState === LoadingState.ERROR}
+    <div class="alert alert-error m-4" role="alert">
+        <span>Nie udało się pobrać odtwarzaczy: {loadError}</span>
+        <a class="btn btn-sm" href="/account">Konto i logowanie</a>
+    </div>
 {/if}

@@ -94,7 +94,7 @@ export function reconcilePlannedTitles(
             : existing?.nextCheckAtMs ?? nowMs;
 
         entries[title.titleId] = {
-            lastEpisodeLink: existing?.lastEpisodeLink ?? null,
+            lastEpisodeLink: existing?.lastEpisodeLink?.trim() || null,
             // A future release date establishes that the premiere is still ahead,
             // even though episode requests are deferred until that day.
             initialized: existing?.initialized || (releaseDayMs !== null && releaseDayMs > nowMs),
@@ -106,7 +106,8 @@ export function reconcilePlannedTitles(
     return {
         entries,
         cursor: plannedIds.has(state.cursor) ? state.cursor : 0,
-        notifications: state.notifications.filter((notification) => plannedIds.has(notification.titleId)),
+        notifications: state.notifications.filter((notification) => plannedIds.has(notification.titleId)
+            && notification.episodeLink.trim().length > 0),
     };
 }
 
