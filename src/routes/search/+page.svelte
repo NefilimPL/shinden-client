@@ -234,7 +234,7 @@
                         <div>{anime.name}</div>
                         <div class="text-xs uppercase font-semibold opacity-60">{anime.anime_type}</div>
                     </div>
-                    {#if globalStates.user.name !== null && statusTitleId(anime)}
+                    {#if statusTitleId(anime)}
                         <select
                             class="select select-bordered select-sm w-36"
                             value={anime.watchStatus}
@@ -248,12 +248,7 @@
                             {/each}
                         </select>
                     {/if}
-                    {#if anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
-                        <div class="badge badge-warning">Zaloguj się aby obejrzeć</div>
-                        <button disabled data-debug-url={anime.url} class="btn btn-square btn-ghost" aria-label="play" onclick={async ()=>{ await handleButton(anime) }}>
-                            <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
-                        </button>
-                    {:else}
+
                         <button
                             data-debug-url={anime.url}
                             class="btn btn-square btn-ghost"
@@ -263,7 +258,7 @@
                         >
                             <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path d="M6 3L20 12 6 21 6 3z"></path></g></svg>
                         </button>
-                    {/if}
+
 
                 </li>
             {/each}
@@ -278,7 +273,7 @@
                                 type="button"
                                 data-debug-url={anime.url}
                                 class="text-left"
-                                disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
+
                                 onclick={async () => { await handleButton(anime); }}
                                 onauxclick={(event) => handleTitleAuxClick(event, anime)}
                             >
@@ -292,15 +287,13 @@
                                     <div class="text-xs uppercase opacity-60">{anime.anime_type}</div>
                                     <div class="mt-auto flex items-center justify-between gap-2">
                                         <span class="badge badge-sm">{anime.rating || "-"}</span>
-                                        {#if anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
-                                            <span class="badge badge-warning badge-sm">Login</span>
-                                        {/if}
+
                                     </div>
                                 </div>
                             </button>
 
                             <div class="flex items-center gap-1 border-t border-base-content/10 p-2">
-                                {#if globalStates.user.name !== null && statusTitleId(anime)}
+                                {#if statusTitleId(anime)}
                                     <select
                                         class="select select-bordered select-xs min-w-0 flex-1"
                                         value={anime.watchStatus}
@@ -318,7 +311,7 @@
                                     data-debug-url={anime.url}
                                     class="btn btn-square btn-ghost btn-sm"
                                     aria-label="play"
-                                    disabled={anime.url.startsWith("https://shinden.pl/titles") && globalStates.user.name === null}
+
                                     onclick={async () => { await handleButton(anime); }}
                                     onauxclick={(event) => handleTitleAuxClick(event, anime)}
                                 >

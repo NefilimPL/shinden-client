@@ -15,7 +15,7 @@
     import { openActiveTitleView, openAnimeTitleInBackground, openRelatedAnimeTitle } from "$lib/titleNavigation";
     import Empty from "$lib/Empty.svelte";
     import { formatShindenCreatedTime, titleIdFromSeriesUrl } from "$lib/shindenProgress";
-    import { loadWatchlistRefreshFilter, queueWatchingCacheTitleRefreshFromStoredSettings, refreshWatchingCacheTitleFromStoredSettings } from "$lib/watchlistRefresh";
+    import { loadWatchlistRefreshFilter } from "$lib/watchlistRefresh";
     import AnimeDetailsPanel from "$lib/AnimeDetailsPanel.svelte";
     import { cachedEpisodeAvailabilityForFilter, type CachedEpisodeAvailability } from "$lib/cachedEpisodeAvailability";
 
@@ -77,13 +77,6 @@
                 "get_watching_episode_availability",
                 { titleId },
             );
-            if (snapshot === null) {
-                await refreshWatchingCacheTitleFromStoredSettings(titleId, false);
-                snapshot = await invoke<Record<string, CachedEpisodeAvailability> | null>(
-                    "get_watching_episode_availability",
-                    { titleId },
-                );
-            }
 
             episodeAvailability = snapshot;
         } catch {
@@ -231,7 +224,6 @@
             episode.viewCount = watched ? Math.max(episode.viewCount, 1) : 0;
             episodes = [...episodes];
             params.episodeProgress = episodes;
-            queueWatchingCacheTitleRefreshFromStoredSettings(titleId);
             log(LogLevel.SUCCESS, watched
                 ? `Oznaczono odcinek ${episode.episodeNo} jako obejrzany`
                 : `Odznaczono odcinek ${episode.episodeNo} jako obejrzany`);
@@ -269,7 +261,7 @@
             <AnimeDetailsPanel
                 {details}
                 watchStatus={currentWatchStatus()}
-                canEdit={globalStates.user.name !== null}
+                canEdit={true}
                 statusDisabled={statusUpdateInProgress}
                 {ratingInProgress}
                 onStatusChange={(status) => { void updateAnimeStatus(status); }}

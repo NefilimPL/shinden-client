@@ -6,41 +6,22 @@
     import { onDestroy, onMount } from "svelte";
     import { invoke } from "$lib/shindenInvoke";
     import { imageProxy } from "$lib/imageProxy.svelte";
-    import { globalStates } from "$lib/global.svelte";
-    import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
-    import { startWatchlistBackgroundRefresh } from "$lib/watchlistRefresh";
+    import { globalStates, getUserData } from "$lib/global.svelte";
     import { plannedEpisodeNotificationStore } from "$lib/plannedEpisodeNotificationStore.svelte";
     import { page } from "$app/state";
     import TitleTabs from "$lib/TitleTabs.svelte";
     import { titleWorkspace } from "$lib/titleWorkspace.svelte";
 
     let { children } = $props();
+    let startupError = $state("");
     onMount(() => {
         void invoke<string>("get_image_proxy_token").then(token => { imageProxy.token = token; });
+        void getUserData().catch(error => { startupError = String(error); });
     });
-    let stopWatchlistBackgroundRefresh: (() => void) | null = null;
-    let userAnimeListRefreshResumeStarted = false;
     const titleRoutePaths = new Set(["/episodes", "/players", "/watching"]);
     const isTitleRoute = $derived(titleRoutePaths.has(page.url.pathname));
 
-    $effect(() => {
-        if (globalStates.user.name && !stopWatchlistBackgroundRefresh) {
-            stopWatchlistBackgroundRefresh = startWatchlistBackgroundRefresh();
-            plannedEpisodeNotificationStore.start();
-            if (!userAnimeListRefreshResumeStarted) {
-                userAnimeListRefreshResumeStarted = true;
-                void resumeUserAnimeListRefresh();
-            }
-        } else if (!globalStates.user.name && stopWatchlistBackgroundRefresh) {
-            stopWatchlistBackgroundRefresh();
-            stopWatchlistBackgroundRefresh = null;
-            plannedEpisodeNotificationStore.stop();
-            userAnimeListRefreshResumeStarted = false;
-        }
-    });
-
     onDestroy(() => {
-        stopWatchlistBackgroundRefresh?.();
         plannedEpisodeNotificationStore.stop();
     });
 </script>
@@ -52,6 +33,12 @@
     <Navbar />
     <BrowserVerification />
     <UpdateNotification />
+    {#if startupError}
+        <p class="alert alert-error m-4" role="alert">{startupError}</p>
+    {:else if !globalStates.libraryReady}
+        <p class="p-6">Otwieranie lokalnej biblioteki…</p>
+    {:else}
+    {#key globalStates.profileRevision}
     <div class="flex min-h-0 flex-1" class:flex-row={titleWorkspace.layout === "vertical"} class:flex-col={titleWorkspace.layout !== "vertical"}>
         <TitleTabs />
         {#if isTitleRoute && titleWorkspace.activeSession}
@@ -68,4 +55,6 @@
         </div>
         {/if}
     </div>
+    {/key}
+    {/if}
 </div>

@@ -16,6 +16,7 @@ use tauri::Manager;
 mod updater_commands;
 mod browser_verification;
 mod shinden_images;
+mod library_commands;
 #[cfg(windows)]
 mod window_frame;
 
@@ -273,7 +274,7 @@ fn get_watching_cache_refresh_status(
 fn get_watching_episode_availability(
     state: tauri::State<'_, ShindenClientBackend>,
     title_id: u64,
-) -> Option<std::collections::HashMap<String, WatchingEpisodeAvailability>> {
+) -> Result<std::collections::HashMap<String, WatchingEpisodeAvailability>, String> {
     state.get_watching_episode_availability(title_id)
 }
 
@@ -308,8 +309,10 @@ async fn login(
 }
 
 #[tauri::command]
-async fn logout(state: tauri::State<'_, ShindenClientBackend>) -> Result<(), String> {
-    state.logout().await
+async fn logout(app: tauri::AppHandle, state: tauri::State<'_, ShindenClientBackend>) -> Result<(), String> {
+    state.logout().await?;
+    library_commands::close_shinden_windows(&app)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -461,6 +464,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            library_commands::get_library_state,
+            library_commands::set_library_preferences,
+            library_commands::select_library_profile,
+            library_commands::search_public_users,
+            library_commands::import_public_user,
             greet,
             write_log,
             test_connection,

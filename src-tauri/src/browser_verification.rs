@@ -8,7 +8,11 @@ const SHINDEN_URL: &str = "https://shinden.pl/";
 const LOGIN_WINDOW_LABEL: &str = "shinden-login";
 
 #[tauri::command]
-pub async fn open_shinden_login(app: AppHandle) -> Result<(), String> {
+pub async fn open_shinden_login(
+    app: AppHandle,
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<(), String> {
+    state.require_network_access()?;
     tauri::async_runtime::spawn_blocking(move || {
         if let Some(window) = app.get_webview_window(LOGIN_WINDOW_LABEL) {
             window.show().map_err(|error| error.to_string())?;
@@ -20,6 +24,7 @@ pub async fn open_shinden_login(app: AppHandle) -> Result<(), String> {
             WebviewUrl::External("https://shinden.pl/main/login".parse().unwrap()),
         )
         .title("Shinden — logowanie")
+        .incognito(true)
         .inner_size(1000.0, 750.0)
         .on_navigation(is_verification_url)
         .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
@@ -67,6 +72,7 @@ pub async fn complete_shinden_login(
     .await
     .map_err(|error| error.to_string())??;
     state.import_browser_session(&agent, &cookies)?;
+    state.complete_browser_login().await?;
     if state.get_user_name().await?.is_none() {
         return Err("Dokończ logowanie w oknie Shinden i spróbuj ponownie.".into());
     }
@@ -83,7 +89,11 @@ fn is_verification_url(url: &tauri::Url) -> bool {
 }
 
 #[tauri::command]
-pub async fn open_shinden_verification(app: AppHandle) -> Result<(), String> {
+pub async fn open_shinden_verification(
+    app: AppHandle,
+    state: tauri::State<'_, ShindenClientBackend>,
+) -> Result<(), String> {
+    state.require_network_access()?;
     // WebView2 creation/cookie access must not block the main event thread.
     tauri::async_runtime::spawn_blocking(move || {
         if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
@@ -101,6 +111,7 @@ pub async fn open_shinden_verification(app: AppHandle) -> Result<(), String> {
             ),
         )
         .title("Shinden — weryfikacja połączenia")
+        .incognito(true)
         .inner_size(1000.0, 750.0)
         // This remote page gets no application capabilities or custom IPC bridge.
         .on_navigation(is_verification_url)
@@ -154,7 +165,7 @@ pub async fn complete_shinden_verification(
 
     state.import_browser_clearance(&user_agent, &clearance)?;
     // Never declare success just because the browser issued a cookie.
-    state.test_connection().await?;
+    state.verify_connection().await?;
     let _ = window.close();
     Ok(())
 }

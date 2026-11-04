@@ -120,7 +120,7 @@
                     </div>
                 </div>
 
-                {#if globalStates.user.name !== null && statusTitleId(anime)}
+                {#if statusTitleId(anime)}
                     <select
                         class="select select-bordered select-sm w-36"
                         value={anime.watchStatus}
@@ -202,7 +202,7 @@
                     </button>
 
                     <div class="flex items-center gap-1 border-t border-base-content/10 p-2">
-                        {#if globalStates.user.name !== null && statusTitleId(anime)}
+                        {#if statusTitleId(anime)}
                             <select
                                 class="select select-bordered select-xs min-w-0 flex-1"
                                 value={anime.watchStatus}

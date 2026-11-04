@@ -16,6 +16,60 @@ Shinden Client to natywne rozwiązanie umożliwiające przeglądanie zasobów se
 - Zintegrowana konsola logów ułatwiająca diagnostykę.
 - Natywny odtwarzacz wspierający treści z cda.pl bez reklam.
 
+## Lokalna biblioteka i profile
+
+Aplikacja przechowuje bibliotekę w jednym pliku SQLite, bez instalowania serwera.
+Ścieżka pliku jest widoczna w **Ustawieniach**; domyślnie jest to
+`%LOCALAPPDATA%\shinden-client\library.sqlite3` na Windows.
+Na pozostałych systemach używany jest lokalny katalog danych użytkownika.
+Zmienna `SHINDEN_LIBRARY_PATH` pozwala wskazać inny plik, np. do testów.
+
+Każde uruchomienie zaczyna się w profilu **Guest**. Jawne logowanie do Shinden wybiera profil nazwany
+nickiem konta. Profile mają osobne listy, statusy, oceny, postęp, opisy, kategorie,
+adresy grafik, zapisane grafiki oraz pobrane listy i linki odcinków. Statusy
+Oglądam, Obejrzane, Planuję, Wstrzymane, Porzucone i Pomijam są logicznymi
+folderami w bazie. Pozostałe odcinki wyliczane są z liczby obejrzanych i znanej
+liczby wszystkich odcinków; nieznana liczba nie jest zastępowana zerem.
+
+Zapisane profile można przełączać lokalnie w ustawieniach, również bez sesji
+serwisu. Wylogowanie przełącza na Guest. **Statusy, oceny i obejrzane odcinki
+nie są wysyłane do Shinden**, również po zalogowaniu.
+
+Połączenia z Shinden są domyślnie wyłączone. Włączenie opcji w ustawieniach
+pozwala pobierać nowe dane. Publiczne dane są pobierane osobnym klientem,
+bez cookies konta. Sesja logowania jest przechowywana tylko w pamięci i używana
+do jawnie wybranego dostępu do odtwarzaczy wymagających konta. Okna Shinden
+działają w trybie prywatnym. Wyłączenie połączeń blokuje kolejne żądania,
+także w operacjach przygotowujących odtwarzacz; już wysłane żądanie może się
+zakończyć. Odpowiedź o blokadzie dostępu lub HTTP 429 wyłącza dalsze połączenia.
+
+Nie ma automatycznych skanów ani automatycznego wznowienia logowania.
+Szczegóły i listy odcinków są zapisywane podczas otwierania anime albo przez
+ręczny przycisk pobierania w bibliotece. Dostępność odtwarzaczy można odświeżyć
+ręcznie w widoku Oglądam. Linki osadzania odtwarzaczy są pobierane ponownie
+przy odtwarzaniu online, ponieważ mogą wygasać.
+
+### Import publicznych list
+
+W **Ustawieniach** włącz połączenia i **Import publicznych list**. Wyszukaj nick
+albo wklej pełny adres, np. `https://shinden.pl/user/458357-nefilimpl`, następnie
+wybierz **Importuj do [profil]**. Import nie loguje na konto źródłowe i nie
+przełącza profilu docelowego. Dodaje dostępne publicznie pozycje wraz z opisami,
+okładkami i licznikami postępu. Ponowny import zachowuje istniejące lokalne
+zmiany. Prywatne lub zablokowane listy mogą być niedostępne.
+
+Cała lista jest sprawdzana przed zapisem w transakcji. Błąd, niepełna odpowiedź
+lub anulowanie przed zatwierdzeniem nie zmienia biblioteki. Kategorie i linki
+poszczególnych odcinków uzupełnia się przy otwarciu anime albo ręcznym pobraniu
+szczegółów. Stary wspólny cache JSON nie jest automatycznie przypisywany
+żadnemu profilowi, ponieważ nie zawiera informacji o właścicielu.
+
+Kopię `library.sqlite3` wykonuj po zamknięciu aplikacji. Baza nie zawiera plików
+filmów. Zapisany odtwarzacz może nadal wymagać połączenia z jego dostawcą,
+a jego adres może wygasnąć. Lokalna baza ogranicza ruch do Shinden, ale
+po włączeniu sieci serwis nadal widzi IP, a żądania z aktywną sesją konta
+pozwalają rozpoznać konto.
+
 ## Weryfikacja połączenia z Shinden
 
 Jeżeli Cloudflare zażąda weryfikacji, aplikacja wyświetli komunikat z przyciskiem

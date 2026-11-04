@@ -6,7 +6,6 @@
     import * as dashjs from "dashjs";
     import { openActiveTitleView } from "$lib/titleNavigation";
     import { formatShindenCreatedTime } from "$lib/shindenProgress";
-    import { queueWatchingCacheTitleRefreshFromStoredSettings } from "$lib/watchlistRefresh";
     import type { EpisodeProgress } from "$lib/types";
     import { windowFullscreenIntent } from "$lib/windowFullscreenIntent";
     import {
@@ -98,7 +97,6 @@
         episode.watched = true;
         episode.viewCount = Math.max(episode.viewCount, 1);
         params.episodeProgress = [...params.episodeProgress];
-        queueWatchingCacheTitleRefreshFromStoredSettings(titleId);
     }
 
     async function handlePrimaryProgressAction() {

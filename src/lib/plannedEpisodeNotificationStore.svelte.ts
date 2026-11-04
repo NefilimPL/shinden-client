@@ -35,6 +35,12 @@ export const plannedEpisodeNotificationStore = {
     stop,
     refreshNow,
     markRead,
+    resetForProfile() {
+        stop();
+        state = emptyPlannedNotificationState();
+        plannedTitles = [];
+        lastUserListLoadedAtMs = 0;
+    },
 };
 
 function loadStoredState() {

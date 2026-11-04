@@ -15,7 +15,7 @@ const layout = parse(source, { modern: true });
 
 function findKeyBlock(node) {
   if (!node || typeof node !== "object") return null;
-  if (node.type === "KeyBlock") return node;
+  if (node.type === "KeyBlock" && source.slice(node.expression.start, node.expression.end).includes("titleWorkspace.activeTitleId")) return node;
   for (const value of Object.values(node)) {
     for (const child of Array.isArray(value) ? value : [value]) {
       const found = findKeyBlock(child);

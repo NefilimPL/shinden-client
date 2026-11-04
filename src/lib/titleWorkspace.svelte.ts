@@ -29,6 +29,9 @@ let state = $state<TitleWorkspaceState>(
 );
 
 export const titleWorkspace = {
+    resetForProfile() {
+        state = createTitleWorkspaceState({ layout: state.layout, fullscreenPresentation: state.fullscreenPresentation });
+    },
     get tabs() {
         return state.tabs;
     },

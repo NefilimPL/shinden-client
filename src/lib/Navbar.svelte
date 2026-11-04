@@ -101,9 +101,9 @@
     </div>
     <div class="flex-none">
         <ul class="menu menu-horizontal px-1 flex items-center">
-            {#if globalStates.user.name}
                 <li><a class="btn btn-ghost btn-sm" href="/watchlist">Ogladam</a></li>
-            {/if}
+            <li><a class="btn btn-ghost btn-sm" href="/account/lists">Biblioteka</a></li>
+            <li><a class="btn btn-ghost btn-sm" href="/settings">Ustawienia</a></li>
             <li><NotificationBell /></li>
             <li><AccountButton/></li>
             <li><UpdateButton/></li>

@@ -4,10 +4,6 @@
     import {log, LogLevel} from "$lib/logs/logs.svelte";
     import {getUserData, globalStates, LoadingState} from "$lib/global.svelte";
 
-    let { data } = $props();
-
-    console.log(data);
-
     let loginOpened = $state(false);
     let loginBusy = $state(false);
     let loginError = $state("");
@@ -47,9 +43,12 @@
             log(LogLevel.INFO, "Trying to log out");
             globalStates.loadingState = LoadingState.LOADING;
             await invoke("logout");
+            await getUserData();
         } catch (error) {
             globalStates.loadingState = LoadingState.ERROR;
+            loginError = String(error);
             log(LogLevel.ERROR, `Could not log out: ${error}`);
+            return;
         }
 
         globalStates.user.name = null;
@@ -61,19 +60,25 @@
 </script>
 
 <div class="hero bg-base-100 h-full">
+    <div class="absolute right-6 top-20 text-right text-sm">
+        <p>Biblioteka lokalna: <strong>{globalStates.library.activeProfile.name}</strong></p>
+        <a class="link" href="/settings">Profile i import danych</a>
+    </div>
     {#if !globalStates.user.name}
         <div class="hero-content flex-col">
             <div class="text-center py-6">
                 <h1 class="text-5xl font-bold">Logowanie</h1>
                 <p>
-                    Zalogowanie się na konto w serwisie shinden.pl umożliwi ci oglądanie niedostępnych publicznie anime.
+                    Logowanie jest opcjonalne i może być potrzebne do materiałów wymagających konta. Listy i postęp działają również jako Guest.
                 </p>
                 <p>Nie masz konta? <a class="link" target="_blank" href="https://shinden.pl/user/0/register">Zarejestruj się</a></p>
             </div>
             <div class="card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl">
                 <div class="card-body gap-4">
                     <p>Zaloguj się loginem lub e-mailem i hasłem w oknie Shinden. Następnie wróć tutaj i potwierdź logowanie.</p>
-                    <button class="btn btn-neutral" disabled={loginBusy} onclick={openLogin}>
+                    <p class="text-sm">Po zalogowaniu Shinden rozpoznaje konto. Zmiany oglądania nadal zapisujesz wyłącznie lokalnie.</p>
+                    {#if !globalStates.library.networkEnabled}<a class="link" href="/settings">Włącz połączenia z Shinden w ustawieniach</a>{/if}
+                    <button class="btn btn-neutral" disabled={loginBusy || !globalStates.library.networkEnabled} onclick={openLogin}>
                         {loginOpened ? "Otwórz ponownie okno Shinden" : "Zaloguj w oknie Shinden"}
                     </button>
                     {#if loginOpened}
@@ -107,6 +112,7 @@
                         <a class="btn btn-primary" href="/account/lists">Moje listy anime</a>
                         <button class="btn btn-neutral" onclick={logout}>Wyloguj się</button>
                     </div>
+                    {#if loginError}<p class="text-error" role="alert">{loginError}</p>{/if}
                 </div>
             </div>
     {/if}

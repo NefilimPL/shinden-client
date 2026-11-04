@@ -68,7 +68,7 @@ pub fn handle_request(
         let response = match state.get_image(&source).await {
             Ok(image) => Response::builder()
                 .header("Content-Type", image.content_type)
-                .header("Cache-Control", "private, max-age=300")
+                .header("Cache-Control", "no-store")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Referrer-Policy", "no-referrer")
                 .header("Content-Security-Policy", "default-src 'none'; sandbox")

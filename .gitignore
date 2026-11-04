@@ -29,3 +29,5 @@ vite.config.ts.timestamp-*
 # Python helper cache
 __pycache__/
 .pytest_cache/
+/.local-library-target/
+/.local-library-work/

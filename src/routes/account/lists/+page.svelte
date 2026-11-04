@@ -18,7 +18,7 @@
         UserAnimeListsPayload,
         UserAnimeListStatusFilter,
     } from "$lib/types";
-    import { resumeUserAnimeListRefresh } from "$lib/userAnimeListRefresh";
+
     import {
         applyUserAnimeListFilters,
         countUserAnimeListStatuses,
@@ -127,27 +127,12 @@
 
     async function initializePage() {
         await ensureUserLoaded();
-        if (!globalStates.user.name) {
-            globalStates.loadingState = LoadingState.WARNING;
-            await goto("/account");
-            return;
-        }
-
-        void resumeUserAnimeListRefresh();
         await pollUserAnimeListRefreshStatus(false);
         await loadUserAnimeLists(false);
     }
 
     async function ensureUserLoaded() {
-        if (globalStates.user.name) {
-            return;
-        }
-
-        try {
-            await getUserData();
-        } catch (error) {
-            log(LogLevel.INFO, `User anime lists require login: ${error}`);
-        }
+        if (!globalStates.libraryReady) await getUserData();
     }
 
     function loadViewMode() {
@@ -384,7 +369,7 @@
                     <option value="title">Tytul</option>
                     <option value="rating">Ocena</option>
                     <option value="progress">Nieobejrzane</option>
-                    <option value="updated">Ostatnia synchronizacja</option>
+                    <option value="updated">Ostatnia zmiana lokalna</option>
                     <option value="releaseYear">Rok premiery</option>
                 </select>
             </section>
@@ -481,7 +466,7 @@
                 <div class="min-w-0">
                     <div class="text-xs uppercase tracking-wide opacity-60">{currentStatusLabel}</div>
                     <div class="truncate text-sm opacity-80">
-                        {visibleItems.length} pozycji | cache: {formatRefreshTime(refreshedAtMs)}
+                        {visibleItems.length} pozycji | profil: {globalStates.library.activeProfile.name}
                     </div>
                     {#if syncError}
                         <div class="truncate text-xs text-warning">{syncError}</div>
@@ -515,8 +500,8 @@
                         class="btn btn-square btn-ghost btn-sm"
                         type="button"
                         aria-label="odswiez cache list"
-                        title="Odswiez cache list"
-                        disabled={refreshInProgress}
+                        title="Pobierz szczegóły i odcinki z Shinden"
+                        disabled={refreshInProgress || !globalStates.library.networkEnabled}
                         onclick={() => { void refreshUserAnimeListCache(); }}
                     >
                         {#if refreshInProgress}
