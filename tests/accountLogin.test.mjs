@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { parse } from "svelte/compiler";
 import ts from "typescript";
 
 function loginPage(options = {}) {
-  const source = readFileSync("src/routes/account/+page.svelte", "utf8").split("</script>")[0].replace(/^[\s\S]*?<script[^>]*>/, "");
+  const component = readFileSync("src/routes/account/+page.svelte", "utf8");
+  const { instance } = parse(component, { modern: true });
+  const source = component.slice(instance.content.start, instance.content.end);
   const ast = ts.createSourceFile("account.ts", source, ts.ScriptTarget.Latest, true);
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && ["openLogin", "handleLogin"].includes(node.name?.text));
   const js = ts.transpileModule(functions.map(node => node.getText(ast)).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;

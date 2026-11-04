@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { parse } from "svelte/compiler";
 import ts from "typescript";
 
 // Run the actual route loader with only native IPC and its other loaders replaced.
 function routeLoader(failEpisodes) {
-  const source = readFileSync("src/routes/episodes/+page.svelte", "utf8").split("</script>")[0].replace(/^[\s\S]*?<script[^>]*>/, "");
+  const component = readFileSync("src/routes/episodes/+page.svelte", "utf8");
+  const { instance } = parse(component, { modern: true });
+  const source = component.slice(instance.content.start, instance.content.end);
   const ast = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
   const loader = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "loadEpisodes");
   const js = ts.transpileModule(loader.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
